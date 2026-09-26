@@ -1,3 +1,8 @@
+﻿node_modules/
 .env
-node_modules/
-data/processed-paydunya-payments.json
+.env.*
+!.env.example
+*.log
+BACKUP-AVANT-CORRECTION-*/
+
+*.BACKUP-CONTINUE
