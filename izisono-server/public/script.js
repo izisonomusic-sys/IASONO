@@ -336,7 +336,7 @@ if('serviceWorker' in navigator){
 }
 document.addEventListener('DOMContentLoaded',async()=>{
   // Bind the UI immediately. A temporary Supabase/CDN failure must never make the buttons appear dead.
-  try{init();renderAuth();if(location.pathname==='/auth')login();}catch(e){console.error('UI init failed',e);toast('Erreur de chargement de l’interface.');return}
+  try{init();renderAuth();if(location.pathname==='/auth')login();}catch(e){console.error('UI init failed',e);toast(`Erreur de chargement de l’interface : ${e?.message||e}`);return}
   try{
     await bootSupabase();
     renderAuth();
