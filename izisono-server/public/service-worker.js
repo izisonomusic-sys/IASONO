@@ -1,5 +1,5 @@
-const CACHE='izisono-v18-shell';
-const SHELL=['/','/index.html','/styles.css','/script.js','/manifest.webmanifest','/assets/izisono-logo.png'];
+const CACHE='izisono-v19-shell';
+const SHELL=['/','/index.html','/styles.css','/script.js?v=20261001-2','/manifest.webmanifest','/assets/izisono-logo.png'];
 self.addEventListener('install',event=>{event.waitUntil(caches.open(CACHE).then(c=>c.addAll(SHELL)).then(()=>self.skipWaiting()).catch(()=>{}))});
 self.addEventListener('activate',event=>{event.waitUntil(caches.open(CACHE).then(async cache=>{
   // Remove only legacy private/dynamic responses, not the offline shell.
