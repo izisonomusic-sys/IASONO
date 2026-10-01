@@ -13,10 +13,8 @@ const PLANS = [
   { id:'premium', name:'Premium', price:9990, credits:24, popular:false, description:'Pour les créateurs intensifs et les événements' },
 ];
 const PAYMENT_METHODS = [
-  { code:'togocel', name:'Togocel Money', short:'T-Money', country:'TG', icon:'📱', channel:'t-money-togo' },
-  { code:'moov_tg', name:'Moov Money Togo', short:'Moov Money', country:'TG', icon:'📲', channel:'moov-togo' },
-  { code:'card_xof', name:'Carte bancaire', short:'Visa / Mastercard', country:'TG', icon:'💳', channel:'card' },
-  { code:'all', name:'Toutes les options PayDunya', short:'PayDunya', country:'', icon:'🌍', channel:null },
+  { code:'togocel', name:'Togocel Money', short:'T-Money', country:'TG', icon:'📱', channel:'t-money-togo', softpayPath:'/softpay/t-money-togo' },
+  { code:'moov_tg', name:'Moov Money Togo', short:'Moov Money', country:'TG', icon:'📲', channel:'moov-togo', softpayPath:'/softpay/moov-togo' },
 ];
 
 function paydunyaMode(){return String(process.env.PAYDUNYA_MODE||'live').toLowerCase()==='test'?'test':'live';}
@@ -71,6 +69,52 @@ async function paydunya(path, options={}){
   }
   return data;
 }
+async function paydunyaSoftPay(path, payload){
+  const {master,privateKey,token}=requirePayDunya();
+  const r=await fetch(`${paydunyaBase()}${path}`,{
+    method:'POST',
+    headers:{
+      'PAYDUNYA-MASTER-KEY':master,
+      'PAYDUNYA-PRIVATE-KEY':privateKey,
+      'PAYDUNYA-TOKEN':token,
+      'Content-Type':'application/json',
+      Accept:'application/json'
+    },
+    body:JSON.stringify(payload)
+  });
+  const data=await r.json().catch(()=>({}));
+  if(!r.ok || data?.success===false){
+    throw Object.assign(new Error(data?.message||data?.errors?.message||`PayDunya SoftPay HTTP ${r.status}`),{status:r.status||502,payload:data});
+  }
+  return data;
+}
+function normalizeTogoPhone(value){
+  const digits=String(value||'').replace(/\D/g,'');
+  if(/^228\d{8}$/.test(digits)) return digits.slice(3);
+  if(/^0\d{8}$/.test(digits)) return digits.slice(1);
+  if(/^\d{8}$/.test(digits)) return digits;
+  throw Object.assign(new Error('invalid_togo_phone'),{status:400});
+}
+function softPayPayload(method,{name,email,phone,paymentId}){
+  if(method.code==='togocel'){
+    return {
+      name_t_money:name,
+      email_t_money:email,
+      phone_t_money:phone,
+      payment_token:paymentId
+    };
+  }
+  if(method.code==='moov_tg'){
+    return {
+      moov_togo_customer_fullname:name,
+      moov_togo_email:email,
+      moov_togo_customer_address:'Togo',
+      moov_togo_phone_number:phone,
+      payment_token:paymentId
+    };
+  }
+  throw Object.assign(new Error('softpay_method_not_supported'),{status:400});
+}
 function verifyCallbackHash(data){
   const master=process.env.PAYDUNYA_MASTER_KEY;
   if(!master||!data?.hash)return false;
@@ -111,61 +155,80 @@ router.get('/plans',(_req,res)=>{
     currency:PAYMENT_CURRENCY,
     display_currency:DISPLAY_CURRENCY,
     display_rate:displayRate(),
-    payment_provider:'PayDunya',
+    payment_provider:'PayDunya SoftPay',
     plans:PLANS.map(p=>({...p,display_price:displayPrice(p.price)})),
     payment_methods:PAYMENT_METHODS
   });
 });
 
-router.get('/methods',(_req,res)=>res.json({currency:PAYMENT_CURRENCY,payment_provider:'PayDunya',methods:PAYMENT_METHODS}));
+router.get('/methods',(_req,res)=>res.json({currency:PAYMENT_CURRENCY,payment_provider:'PayDunya SoftPay',methods:PAYMENT_METHODS}));
 
 router.post('/checkout',async(req,res)=>{
   try{
     const {user}=await requireUser(req);
     const plan=PLANS.find(p=>p.id===req.body?.plan);
-    const requestedMethod=String(req.body?.payment_method||'all');
-    if(!PAYMENT_METHODS.some(m=>m.code===requestedMethod)) return res.status(400).json({error:'invalid_payment_method'});
+    const requestedMethod=String(req.body?.payment_method||'togocel');
+    const selected=PAYMENT_METHODS.find(m=>m.code===requestedMethod);
+    if(!selected) return res.status(400).json({error:'invalid_payment_method'});
     if(!plan) return res.status(400).json({error:'invalid_plan'});
+
+    const phone=normalizeTogoPhone(req.body?.phone);
     const url=publicUrl();
     const email=user.email||'';
     const customerName=(email.split('@')[0]||'Utilisateur').replace(/[^a-zA-ZÀ-ÿ0-9 _-]/g,' ').trim().slice(0,60)||'Utilisateur';
-    const selected=PAYMENT_METHODS.find(m=>m.code===requestedMethod);
     const baseInvoice={
       total_amount:plan.price,
       description:`izisono — ${plan.name} — ${plan.credits} Notes`,
-      customer:{name:customerName,email},
+      customer:{name:customerName,email,phone},
       items:{item_0:{name:`Pack ${plan.name}`,quantity:1,unit_price:String(plan.price),total_price:String(plan.price),description:`${plan.credits} Notes izisono`}}
     };
-    const makePayload=(channels)=>({
-      invoice:{...baseInvoice,...(channels?{channels}: {})},
+    const invoicePayload={
+      invoice:baseInvoice,
       store:{name:'izisono',tagline:'Studio musical IA',website_url:url},
-      custom_data:{user_id:user.id,plan_id:plan.id,credits:String(plan.credits),product:'izisono_notes'},
+      custom_data:{user_id:user.id,plan_id:plan.id,credits:String(plan.credits),product:'izisono_notes',payment_method:requestedMethod},
       actions:{
         cancel_url:`${url}/?payment=cancelled`,
         return_url:`${url}/?payment=return`,
         callback_url:`${url}/api/billing/paydunya-ipn`
       }
-    });
-    const attempts=[];
-    if(selected?.channel) attempts.push(makePayload([selected.channel]));
-    attempts.push(makePayload(null));
-    let data=null,lastError=null;
-    for(let i=0;i<attempts.length;i++){
-      try{data=await paydunya('/checkout-invoice/create',{method:'POST',body:JSON.stringify(attempts[i])});break;}
-      catch(error){lastError=error;console.warn(`PayDunya checkout attempt ${i+1} failed`,error.payload||error.message);}
-    }
-    if(!data) throw lastError||new Error('paydunya_checkout_failed');
-    const checkoutUrl=data?.response_text||data?.checkout_url||data?.data?.response_text||data?.data?.checkout_url;
-    const paymentId=data?.token||data?.data?.token||null;
-    if(!checkoutUrl) throw new Error('paydunya_checkout_url_missing');
-    if(paymentId){
-      try{await createPaymentTransaction({userId:user.id,paymentId,plan,method:requestedMethod==='all'?null:requestedMethod,rawPayload:data,status:'initiated'});}
-      catch(recordError){console.error('PayDunya initialized but local transaction recording failed',recordError);}
-    }
-    res.json({ok:true,checkout_url:checkoutUrl,payment_id:paymentId,plan:{...plan,display_price:displayPrice(plan.price)},display_currency:DISPLAY_CURRENCY,payment_currency:PAYMENT_CURRENCY,payment_provider:'PayDunya'});
-  }catch(e){console.error('PayDunya checkout failed',e);res.status(e.status||500).json({error:e.message||'checkout_failed',details:e.payload});}
-});
+    };
 
+    const invoice=await paydunya('/checkout-invoice/create',{method:'POST',body:JSON.stringify(invoicePayload)});
+    const paymentId=invoice?.token||invoice?.data?.token;
+    if(!paymentId) throw new Error('paydunya_payment_token_missing');
+
+    let softpay;
+    try{
+      softpay=await paydunyaSoftPay(selected.softpayPath,softPayPayload(selected,{name:customerName,email,phone,paymentId}));
+    }catch(error){
+      try{await createPaymentTransaction({userId:user.id,paymentId,plan,method:requestedMethod,rawPayload:{invoice,error:error.payload||error.message},status:'failed'});}catch(recordError){console.error('Failed to record SoftPay failure',recordError);}
+      throw Object.assign(new Error(error.message||'softpay_payment_failed'),{status:error.status||502,payload:error.payload});
+    }
+
+    let verification={credited:false,status:'pending',paymentId};
+    try{verification=await creditFromPayment(paymentId);}catch(verifyError){console.warn('Initial SoftPay verification deferred',verifyError.message);}
+    const status=verification?.credited?'completed':String(verification?.status||'pending').toLowerCase();
+    try{
+      await createPaymentTransaction({userId:user.id,paymentId,plan,method:requestedMethod,rawPayload:{invoice,softpay},status:status==='completed'?'completed':'pending'});
+    }catch(recordError){console.error('SoftPay transaction recording failed',recordError);}
+
+    res.json({
+      ok:true,
+      payment_id:paymentId,
+      status,
+      pending_confirmation:status!=='completed',
+      message:softpay?.message||'Paiement lancé. Valide la demande sur ton téléphone.',
+      plan:{...plan,display_price:displayPrice(plan.price)},
+      display_currency:DISPLAY_CURRENCY,
+      payment_currency:PAYMENT_CURRENCY,
+      payment_provider:'PayDunya SoftPay',
+      payment_method:requestedMethod
+    });
+  }catch(e){
+    console.error('PayDunya SoftPay checkout failed',e);
+    res.status(e.status||500).json({error:e.message||'checkout_failed',details:e.payload});
+  }
+});
 router.get('/verify/:paymentId',async(req,res)=>{
   try{
     const {user}=await requireUser(req);
