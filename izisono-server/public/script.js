@@ -100,29 +100,6 @@ async function buyPlan(plan){
   }catch(e){toast(e.message||'Impossible de lancer le paiement.');}
   finally{if(btn){btn.disabled=false;btn.textContent='Payer maintenant';}}
 }
-async function buyPlan(plan){
-  if(!state.user)return login();
-  const phone=($('#paymentPhone')?.value||'').trim();
-  const btn=$('#payNowBtn');
-  if(!phone){toast('Entre ton numéro Togo avant de payer.');$('#paymentPhone')?.focus();return;}
-  if(btn){btn.disabled=true;btn.textContent='Lancement…';}
-  try{
-    const d=await api('/billing/checkout',{method:'POST',body:JSON.stringify({plan,payment_method:state.paymentMethod,phone})});
-    addNotification('Paiement lancé',d.message||'Valide la demande de paiement sur ton téléphone.');
-    if(d.pending_confirmation){
-      toast(d.message||'Valide le paiement sur ton téléphone.');
-      await pollPaymentStatus(d.payment_id);
-    }else if(d.status==='completed'){
-      toast(`Paiement confirmé : +${d.plan?.credits||0} Notes`);
-      await loadCredits();
-      showPage('notes');
-    }
-  }catch(e){
-    toast(e.message==='lomopay_credentials_missing'?'Le paiement LomoPay n’est pas encore configuré côté serveur.':e.message==='lomopay_operator_not_configured'?'La méthode Mobile Money n’est pas encore activée dans la configuration LomoPay.':e.message);
-  }finally{
-    if(btn){btn.disabled=false;btn.textContent='Payer maintenant';}
-  }
-}
 async function pollPaymentStatus(paymentId){
   if(!paymentId)return;
   for(let i=0;i<40;i++){
