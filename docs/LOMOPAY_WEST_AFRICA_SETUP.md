@@ -45,7 +45,7 @@ Répéter le format pour les pays et opérateurs dont LomoPay a confirmé la col
 - SLE : SL
 - LRD : LR
 
-Le backend calcule le montant local à partir des prix de référence XOF avec le service de taux de change ExchangeRate-API (cache serveur de 6 heures). En cas d’indisponibilité du taux, le checkout est bloqué plutôt que d’utiliser un taux inventé.
+Le backend calcule le montant local à partir des prix de référence XOF avec le service de taux de change ExchangeRate-API (cache serveur de 6 heures). En cas d’indisponibilité du taux, le checkout est bloqué plutôt que d’utiliser un taux inventé.\n\nÀ la date de cette intégration, la documentation LomoPay énumère XOF, XAF, EUR et USD comme devises de paiement. GHS, NGN, GNF, SLE et LRD ne sont pas énumérées : elles restent donc désactivées tant que LomoPay n’a pas confirmé leur prise en charge Direct API pour votre compte. La documentation identifie également Orange CI, BF, SN et GN comme opérateurs pouvant nécessiter l’OTP `#144#391#`.
 
 ## Conditions avant activation réelle
 
