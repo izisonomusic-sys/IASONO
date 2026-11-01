@@ -99,7 +99,8 @@ function publicUrl() {
   return String(process.env.PUBLIC_APP_URL || process.env.CLIENT_URL || 'http://localhost:3000').split(',')[0].trim().replace(/\/$/,'');
 }
 function normalizePhone(value,country) {
-  const digits = String(value||'').replace(/\D/g,'');
+  let digits = String(value||'').replace(/\D/g,'');
+  if(digits.startsWith('00'))digits=digits.slice(2);
   const dial = country.dial;
   let national = digits.startsWith(dial) ? digits.slice(dial.length) : digits;
   if (national.startsWith('0')) national = national.slice(1);
@@ -139,7 +140,7 @@ async function creditPayment(ref) {
   if (!Number.isFinite(amount)||!Number.isFinite(expected)||amount+0.000001<expected) throw new Error('payment_amount_invalid');
   const status=String(p.status||'').toLowerCase();
   if (status!=='completed') return {credited:false,status:status||'unknown',paymentId:ref};
-  return (await rpc('apply_paydunya_payment',{p_user_id:local.user_id,p_payment_id:ref,p_plan_id:plan.id,p_amount:amount,p_currency:local.currency,p_credits:local.credits||plan.credits,p_status:'completed',p_method:local.method||p.method||null,p_gateway:'lomopay',p_raw_payload:p}))||{credited:false,status:'completed',paymentId:ref};
+  return (await rpc('apply_paydunya_payment',{p_user_id:local.user_id,p_payment_id:ref,p_plan_id:plan.id,p_amount:expected,p_currency:local.currency,p_credits:local.credits||plan.credits,p_status:'completed',p_method:local.method||p.method||null,p_gateway:'lomopay',p_raw_payload:p}))||{credited:false,status:'completed',paymentId:ref};
 }
 
 router.get('/countries',(_req,res)=>{
