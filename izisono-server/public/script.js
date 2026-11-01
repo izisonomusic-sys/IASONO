@@ -58,11 +58,12 @@ async function loadPlans(){
     document.querySelectorAll('.note-plan').forEach(card=>card.onclick=()=>selectPlan(card.dataset.plan));
     updatePlanSelection();
     document.querySelectorAll('[data-local-plan-price]').forEach(el=>{const p=state.plans.find(x=>x.id===el.dataset.localPlanPrice);if(p)el.textContent=Number(p.display_price??p.price).toLocaleString('fr-FR',{minimumFractionDigits:0,maximumFractionDigits:2})+' '+currency;});
-  }catch(e){console.error('Chargement des forfaits:',e);if($('#notePlanGrid'))$('#notePlanGrid').innerHTML='<p class="empty">Les forfaits sont momentanément indisponibles. Réessaie dans un instant.</p>';}
+  }catch(e){console.error('Chargement des forfaits:',e);state.plans=[];state.paymentMethods=[];renderPaymentMethods();document.querySelectorAll('[data-local-plan-price]').forEach(el=>{el.textContent='Prix indisponible';});$('#paymentPlanPrice')&&($('#paymentPlanPrice').textContent='Indisponible');updatePlanSelection();if($('#notePlanGrid'))$('#notePlanGrid').innerHTML='<p class="empty">Les tarifs sont momentanément indisponibles. Réessaie dans un instant.</p>';}
 }
 function renderPaymentMethods(){
   const host=$('#paymentMethods');if(!host)return;
   state.paymentMethod=state.paymentMethods[0]?.code||'';
+  const payButton=$('#payNowBtn');if(payButton)payButton.disabled=!state.paymentCurrencyEnabled||!state.paymentMethods.length;
   if(!state.paymentCurrencyEnabled){host.innerHTML='<p class="empty">Le prix local est affiché, mais LomoPay n’a pas encore confirmé l’encaissement dans cette devise. Le paiement est temporairement indisponible dans ce pays.</p>';return;}
   host.innerHTML=state.paymentMethods.length?state.paymentMethods.map((m,i)=>`<button type="button" class="payment-method ${i===0?'selected':''}" data-method="${esc(m.code)}"><span class="method-icon">${esc(m.icon||'📱')}</span><span><b>${esc(m.name)}</b><small>${esc(m.short||m.name)}</small></span><span class="method-check">✓</span></button>`).join(''):'<p class="empty">Aucun opérateur de paiement n’est encore activé pour ce pays.</p>';
   host.querySelectorAll('.payment-method').forEach(btn=>btn.onclick=()=>{state.paymentMethod=btn.dataset.method;host.querySelectorAll('.payment-method').forEach(x=>x.classList.toggle('selected',x===btn));});
