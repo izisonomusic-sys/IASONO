@@ -3,7 +3,7 @@ const LANGS=[
   ['fr','🇫🇷 Français'],['en','🇬🇧 English'],['ee','🇹🇬 Eʋegbe (Ewe)'],['mina','🇹🇬 Mina / Gen'],['kbp','🇹🇬 Kabyè'],['tem','🇹🇬 Tem'],['ife','🇹🇬 Ifè'],['nawdm','🇹🇬 Nawdm'],['bass','🇹🇬 Bassar'],['kon','🇹🇬 Konkomba'],['ha','🌍 Hausa'],['yo','🌍 Yoruba'],['tw','🌍 Twi']
 ];
 function safeLocalJson(key,fallback){try{const raw=localStorage.getItem(key);return raw?JSON.parse(raw):fallback}catch(e){console.warn('localStorage reset:',key,e);localStorage.removeItem(key);return fallback}}
-const state={lang:localStorage.getItem('izisono_lang')||'fr',occasion:'birthday',creationMode:'classic',supabase:null,user:null,config:null,profile:null,notifications:safeLocalJson('izisono_notifications',[]),plans:[],selectedPlan:localStorage.getItem('izisono_selected_plan')||'popular',paymentMethod:'',paymentCountry:'TG',paymentCurrency:'XOF',paymentMethods:[]};
+const state={lang:localStorage.getItem('izisono_lang')||'fr',occasion:'birthday',creationMode:'classic',supabase:null,user:null,config:null,profile:null,notifications:safeLocalJson('izisono_notifications',[]),plans:[],selectedPlan:localStorage.getItem('izisono_selected_plan')||'popular',paymentMethod:'',paymentCountry:'TG',paymentCurrency:'XOF',paymentCurrencyEnabled:true,paymentMethods:[]};
 const $=s=>document.querySelector(s);
 const esc=s=>String(s??'').replace(/[&<>'"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c]));
 function toast(m){const x=$('#toast');x.textContent=m;x.classList.add('show');setTimeout(()=>x.classList.remove('show'),3200)}
@@ -63,18 +63,21 @@ async function loadPlans(){
 function renderPaymentMethods(){
   const host=$('#paymentMethods');if(!host)return;
   state.paymentMethod=state.paymentMethods[0]?.code||'';
+  if(!state.paymentCurrencyEnabled){host.innerHTML='<p class="empty">Le prix local est affiché, mais LomoPay n’a pas encore confirmé l’encaissement dans cette devise. Le paiement est temporairement indisponible dans ce pays.</p>';return;}
   host.innerHTML=state.paymentMethods.length?state.paymentMethods.map((m,i)=>`<button type="button" class="payment-method ${i===0?'selected':''}" data-method="${esc(m.code)}"><span class="method-icon">${esc(m.icon||'📱')}</span><span><b>${esc(m.name)}</b><small>${esc(m.short||m.name)}</small></span><span class="method-check">✓</span></button>`).join(''):'<p class="empty">Aucun opérateur de paiement n’est encore activé pour ce pays.</p>';
   host.querySelectorAll('.payment-method').forEach(btn=>btn.onclick=()=>{state.paymentMethod=btn.dataset.method;host.querySelectorAll('.payment-method').forEach(x=>x.classList.toggle('selected',x===btn));});
 }
 async function loadPaymentCountries(){
   try{
     const d=await api('/billing/countries');
+    const countries=d.countries||[];
     const selectors=[$('#paymentCountry'),$('#pricingCountry')].filter(Boolean);
-    const options=(d.countries||[]).map(c=>'<option value="'+c.code+'" '+(!c.currency_enabled?'disabled':'')+'>'+esc(c.name)+' — '+esc(c.currency)+(!c.currency_enabled?' (devise à activer)':'')+'</option>').join('');
-    if(!(d.countries||[]).some(c=>c.code===state.paymentCountry&&c.currency_enabled))state.paymentCountry='TG';
+    const options=countries.map(c=>'<option value="'+c.code+'">'+esc(c.name)+' — '+esc(c.currency)+(c.currency_enabled?'':' (paiement non activé)')+'</option>').join('');
+    let selected=countries.find(c=>c.code===state.paymentCountry)||countries.find(c=>c.code==='TG');
+    if(selected){state.paymentCountry=selected.code;state.paymentCurrencyEnabled=!!selected.currency_enabled;}
     selectors.forEach(select=>{
       select.innerHTML=options;select.value=state.paymentCountry;
-      select.onchange=async()=>{state.paymentCountry=select.value;selectors.forEach(other=>{other.value=state.paymentCountry;});await loadPlans();updatePaymentSummary();};
+      select.onchange=async()=>{state.paymentCountry=select.value;selected=countries.find(c=>c.code===state.paymentCountry);state.paymentCurrencyEnabled=!!selected?.currency_enabled;selectors.forEach(other=>{other.value=state.paymentCountry;});await loadPlans();updatePaymentSummary();};
     });
     await loadPlans();
   }catch(e){console.warn('Pays de paiement indisponibles',e);await loadPlans();}
