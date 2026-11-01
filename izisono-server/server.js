@@ -132,7 +132,7 @@ app.get('*', async (_req, res) => {
 const port = process.env.PORT || 3000;
 app.listen(port, async () => {
   console.log(`🎵 izisono backend prêt sur http://localhost:${port}`);
-  console.log(`📍 Localisation: Togo (Francophone)`);
+  console.log(`📍 Zone de paiement: Afrique de l’Ouest (pays et opérateurs activés)`);
   console.log(`💱 Monnaie affichée: ${CURRENCY_CONFIG.name} (${CURRENCY_CONFIG.code}) · Paiement LomoPay Direct: ${CURRENCY_CONFIG.payment_code || 'XOF'}`);
   console.log(`🌍 Langues: ${Object.keys(SUPPORTED_LANGUAGES).join(', ')}`);
   console.log(`🤖 Fournisseur: ${process.env.MUSIC_PROVIDER || 'mureka'}`);
