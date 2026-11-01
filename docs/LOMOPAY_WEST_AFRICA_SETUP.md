@@ -55,4 +55,4 @@ Le backend calcule le montant local à partir des prix de référence XOF avec l
 4. Ajouter les codes opérateur exacts à `LOMOPAY_COUNTRY_OPERATORS_JSON`.
 5. Tester chaque route en environnement de test avant d'activer les paiements réels.
 
-Les pays en devise autre que XOF restent désactivés par défaut. Le code ne prétend pas que LomoPay prend en charge une devise ou un opérateur tant que cela n’a pas été confirmé.
+Les visiteurs peuvent sélectionner les 12 pays pour consulter une estimation du prix local lorsque le service de change fournit le taux. Pour les devises non confirmées, l’interface indique que le paiement n’est pas activé et le backend refuse le checkout. Le code ne prétend pas que LomoPay prend en charge une devise ou un opérateur tant que cela n’a pas été confirmé.
