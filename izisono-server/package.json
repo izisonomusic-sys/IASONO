@@ -1,7 +1,7 @@
 {
   "name": "izisono",
   "version": "1.1.0",
-  "description": "Studio de composition musicale assisté par IA avec support multilingue pour le Togo",
+  "description": "Studio de composition musicale assisté par IA avec paiements Mobile Money en Afrique de l’Ouest",
   "type": "module",
   "main": "server.js",
   "scripts": {
@@ -18,7 +18,13 @@
     "i18n",
     "xof",
     "paydunya",
-    "streaming"
+    "streaming",
+    "west-africa",
+    "ghana",
+    "nigeria",
+    "senegal",
+    "ivory-coast",
+    "mobile-money"
   ],
   "author": "izisono Team",
   "license": "MIT",
