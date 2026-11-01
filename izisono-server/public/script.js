@@ -57,6 +57,7 @@ async function loadPlans(){
     document.querySelectorAll('.select-plan').forEach(btn=>btn.onclick=e=>{e.stopPropagation();selectPlan(btn.dataset.plan)});
     document.querySelectorAll('.note-plan').forEach(card=>card.onclick=()=>selectPlan(card.dataset.plan));
     updatePlanSelection();
+    document.querySelectorAll('[data-local-plan-price]').forEach(el=>{const p=state.plans.find(x=>x.id===el.dataset.localPlanPrice);if(p)el.textContent=Number(p.display_price??p.price).toLocaleString('fr-FR',{minimumFractionDigits:0,maximumFractionDigits:2})+' '+currency;});
   }catch(e){console.error('Chargement des forfaits:',e);if($('#notePlanGrid'))$('#notePlanGrid').innerHTML='<p class="empty">Les forfaits sont momentanément indisponibles. Réessaie dans un instant.</p>';}
 }
 function renderPaymentMethods(){
@@ -67,12 +68,14 @@ function renderPaymentMethods(){
 }
 async function loadPaymentCountries(){
   try{
-    const d=await api('/billing/countries'),select=$('#paymentCountry');
-    if(!select)return;
-    select.innerHTML=(d.countries||[]).map(c=>`<option value="${c.code}" ${!c.currency_enabled?'disabled':''}>${esc(c.name)} — ${esc(c.currency)}${!c.currency_enabled?' (devise à activer)':''}</option>`).join('');
+    const d=await api('/billing/countries');
+    const selectors=[$('#paymentCountry'),$('#pricingCountry')].filter(Boolean);
+    const options=(d.countries||[]).map(c=>'<option value="'+c.code+'" '+(!c.currency_enabled?'disabled':'')+'>'+esc(c.name)+' — '+esc(c.currency)+(!c.currency_enabled?' (devise à activer)':'')+'</option>').join('');
     if(!(d.countries||[]).some(c=>c.code===state.paymentCountry&&c.currency_enabled))state.paymentCountry='TG';
-    select.value=state.paymentCountry;
-    select.onchange=async()=>{state.paymentCountry=select.value;await loadPlans();updatePaymentSummary();};
+    selectors.forEach(select=>{
+      select.innerHTML=options;select.value=state.paymentCountry;
+      select.onchange=async()=>{state.paymentCountry=select.value;selectors.forEach(other=>{other.value=state.paymentCountry;});await loadPlans();updatePaymentSummary();};
+    });
     await loadPlans();
   }catch(e){console.warn('Pays de paiement indisponibles',e);await loadPlans();}
 }
