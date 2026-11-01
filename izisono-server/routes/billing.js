@@ -24,7 +24,7 @@ const COUNTRIES = [
   { code:'LR', name:'Liberia', currency:'LRD', dial:'231' }
 ];
 const CURRENCY_NAMES = { XOF:'FCFA', GHS:'GHS', NGN:'NGN', GNF:'GNF', SLE:'SLE', LRD:'LRD' };
-const CURRENCY_DECIMALS = { XOF:0, GHS:2, NGN:2, GNF:0, SLE:2, LRD:2 };
+const CURRENCY_DECIMALS = { XOF:0, GHS:0, NGN:0, GNF:0, SLE:0, LRD:0 };
 let ratesCache = { at:0, rates:null };
 const RATE_TTL = 6 * 60 * 60 * 1000;
 
@@ -53,8 +53,12 @@ function enabledCurrencies() {
 }
 function operatorConfig() {
   try {
-    const parsed = JSON.parse(process.env.LOMOPAY_COUNTRY_OPERATORS_JSON || '{}');
-    return parsed && typeof parsed === 'object' ? parsed : {};
+    const raw=process.env.LOMOPAY_COUNTRY_OPERATORS_JSON;
+    if(raw){const parsed=JSON.parse(raw);return parsed&&typeof parsed==='object'?parsed:{};}
+    const legacy={};
+    if(process.env.LOMOPAY_TG_TOGOCEL_OPERATOR)legacy.TG=[{code:process.env.LOMOPAY_TG_TOGOCEL_OPERATOR,name:'Togocel Money',short:'T-Money',icon:'📱'}];
+    if(process.env.LOMOPAY_TG_MOOV_OPERATOR)legacy.TG=[...(legacy.TG||[]),{code:process.env.LOMOPAY_TG_MOOV_OPERATOR,name:'Moov Money Togo',short:'Moov Money',icon:'📲'}];
+    return legacy;
   } catch { throw Object.assign(new Error('lomopay_operator_config_invalid'), { status:500 }); }
 }
 function methodsFor(countryCode) {
@@ -82,7 +86,7 @@ async function localPrice(baseXof, currency) {
   const rates = await getRates();
   const rate = Number(rates[currency]);
   if (!Number.isFinite(rate) || rate <= 0) throw Object.assign(new Error('exchange_rate_unavailable'), { status:503 });
-  const decimals = CURRENCY_DECIMALS[currency] ?? 2;
+  const decimals = CURRENCY_DECIMALS[currency] ?? 0;
   const factor = 10 ** decimals;
   return Math.round(baseXof * rate * factor) / factor;
 }
@@ -115,7 +119,7 @@ async function localPayment(ref) {
 }
 async function updateLocal(ref,patch,onlyIfNotCompleted=true) {
   let path=`payment_transactions?payment_id=eq.${encodeURIComponent(ref)}`;
-  if (onlyIfNotCompleted) path+='&status=neq.completed';
+  if (onlyIfNotCompleted) path+='&status=not.in.(success,completed)';
   return supabaseAdmin(path,{method:'PATCH',headers:{Prefer:'return=minimal'},body:JSON.stringify(patch)});
 }
 async function recordInitial({userId,paymentId,plan,amount,currency,method,payload}) {
@@ -168,7 +172,7 @@ router.post('/checkout',async(req,res)=>{
     const email=user.email||'', name=(email.split('@')[0]||'Utilisateur').replace(/[^a-zA-ZÀ-ÿ0-9 _-]/g,' ').trim().slice(0,60)||'Utilisateur';
     ref='izo_'+crypto.randomUUID();ctx={userId:user.id,plan,method};
     await recordInitial({userId:user.id,paymentId:ref,plan,amount,currency:country.currency,method,payload:{provider:'lomopay',country:country.code,external_reference:ref}});
-    const response=await lomo('/direct.php',{method:'POST',headers:{'Idempotency-Key':ref},body:JSON.stringify({amount,currency:country.currency,country:country.code,operator,phone,method:'mobile_money',customer_name:name,customer_email:email,external_reference:ref,webhook_url:publicUrl()+'/api/billing/lomopay-webhook'})});
+    const response=await lomo('/direct.php',{method:'POST',headers:{'Idempotency-Key':ref},body:JSON.stringify({amount,currency:country.currency,country:country.code,operator,phone,method:'mobile_money',customer_name:name,customer_email:email,external_reference:ref,webhook_url:publicUrl()+'/api/billing/lomopay-webhook',...(req.body?.otp?{otp:String(req.body.otp).trim()}: {})})});
     const p=payloadData(response),providerId=p.id||p.payment_id||null,status=String(p.status||'pending').toLowerCase();
     await updateLocal(ref,{status:status==='failed'?'failed':'pending',raw_payload:{provider:'lomopay',provider_id:providerId,response},updated_at:new Date().toISOString()});
     let verification={credited:false,status,paymentId:ref};
