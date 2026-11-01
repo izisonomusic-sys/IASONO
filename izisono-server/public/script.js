@@ -96,7 +96,7 @@ async function buyPlan(plan){
     addNotification('Paiement lancé',d.message||'Confirme la demande de paiement sur ton téléphone.');
     if(d.next_action?.url){location.href=d.next_action.url;return;}
     if(d.pending_confirmation){toast(d.message||'Confirme le paiement sur ton téléphone.');await pollPaymentStatus(d.payment_id);}
-    else if(d.status==='completed'){toast(`Paiement confirmé : +${d.plan?.credits||0} Notes`);await loadCredits();showPage('notes');}
+    else if(d.credited||['completed','success'].includes(String(d.status||'').toLowerCase())){toast(`Paiement confirmé : +${d.plan?.credits||0} Notes`);await loadCredits();showPage('notes');}
   }catch(e){toast(e.message||'Impossible de lancer le paiement.');}
   finally{if(btn){btn.disabled=false;btn.textContent='Payer maintenant';}}
 }
@@ -107,7 +107,7 @@ async function pollPaymentStatus(paymentId){
     try{
       const r=await api('/billing/verify/'+encodeURIComponent(paymentId));
       const status=String(r.status||'').toLowerCase();
-      if(r.credited){
+      if(r.credited||['success','completed'].includes(status)){
         addNotification('Notes ajoutées',`${r.creditsAdded||0} Notes ont été ajoutées à ton compte.`);
         toast(`Paiement confirmé : +${r.creditsAdded||0} Notes`);
         await loadCredits();
