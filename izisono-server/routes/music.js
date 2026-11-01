@@ -69,7 +69,8 @@ router.post('/generate',async(req,res)=>{
     ({user}=await requireUser(req));
     enforceIpRateLimit(req);
     if(user.email_confirmed_at===null) return res.status(403).json({error:'email_confirmation_required'});
-    const{prompt='',lyrics='',genre='Afrobeat',mood='joyful',language='fr',duration=60,occasion='Autre',voice='female',instrumental=false}=req.body||{};
+    const{prompt='',lyrics='',creation_mode='classic',genre='Afrobeat',mood='joyful',language='fr',duration=60,occasion='Autre',voice='female',instrumental=false}=req.body||{};
+    const creationMode=['classic','intelligent'].includes(creation_mode)?creation_mode:'classic';
     if(!prompt&&!lyrics)return res.status(400).json({error:'prompt_or_lyrics_required'});
     if(String(prompt).length>1200||String(lyrics).length>5000)return res.status(400).json({error:'input_too_long'});
     if(Number(duration)<15||Number(duration)>420)return res.status(400).json({error:'duration_invalid'});
@@ -78,9 +79,9 @@ router.post('/generate',async(req,res)=>{
     const day=await db.count('generation_jobs',`?user_id=eq.${encodeURIComponent(user.id)}&created_at=gte.${encodeURIComponent(new Date(Date.now()-24*60*60*1000).toISOString())}`);if(day>=MAX_DAILY_GENERATIONS)return res.status(429).json({error:'daily_generation_limit',max:MAX_DAILY_GENERATIONS});
     const p=await getProfile(db,user);const debited=await rpc('consume_generation_credits',{p_user_id:user.id,p_amount:GENERATION_COST});
     if(!debited?.success)return res.status(402).json({error:'insufficient_credits',credits:debited?.credits??p.credits,required:GENERATION_COST});debit=true;
-    const track={id:crypto.randomUUID(),user_id:user.id,title:titleFromPrompt(prompt,occasion),prompt,lyrics,genre,mood,language,duration:Number(duration),voice,instrumental,occasion,provider:'mureka',status:'preparing',public:false};
+    const track={id:crypto.randomUUID(),user_id:user.id,title:titleFromPrompt(prompt,occasion),prompt,lyrics,creation_mode:creationMode,genre,mood,language,duration:Number(duration),voice,instrumental,occasion,provider:'mureka',status:'preparing',public:false};
     await db.insert('tracks',track,'*');trackId=track.id;
-    const job=await db.insert('generation_jobs',{user_id:user.id,track_id:track.id,provider:'mureka',status:'preparing',request:{prompt,lyrics,genre,mood,language,duration:Number(duration),occasion,voice,instrumental}},'*');jobId=job?.[0]?.id;
+    const job=await db.insert('generation_jobs',{user_id:user.id,track_id:track.id,provider:'mureka',status:'preparing',request:{prompt,lyrics,creation_mode:creationMode,genre,mood,language,duration:Number(duration),occasion,voice,instrumental}},'*');jobId=job?.[0]?.id;
     let providerResponse;
     const payload={model:process.env.MUREKA_MODEL||'auto',n:1,prompt:buildPrompt({prompt,genre,mood,language,voice,occasion})};
     if(instrumental)providerResponse=await mureka('/v1/instrumental/generate',{method:'POST',body:JSON.stringify(payload)});
