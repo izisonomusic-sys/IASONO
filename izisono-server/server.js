@@ -36,7 +36,6 @@ app.use((req, res, next) => {
 });
 
 // Conserver le corps brut pour vérifier les signatures HMAC des webhooks.
-app.use('/api/billing/lomopay-webhook', express.raw({ type: 'application/json' }));
 app.use('/api/billing/webhook', express.raw({ type: 'application/json' }));
 app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
@@ -132,8 +131,8 @@ app.get('*', async (_req, res) => {
 const port = process.env.PORT || 3000;
 app.listen(port, async () => {
   console.log(`🎵 izisono backend prêt sur http://localhost:${port}`);
-  console.log(`📍 Zone de paiement: Afrique de l’Ouest (pays et opérateurs activés)`);
-  console.log(`💱 Monnaie affichée: ${CURRENCY_CONFIG.name} (${CURRENCY_CONFIG.code}) · Paiement LomoPay Direct: ${CURRENCY_CONFIG.payment_code || 'XOF'}`);
+  console.log('📍 Zone de paiement: Togo — PayDunya SoftPay (T-Money / Moov Money)');
+  console.log(`💱 Monnaie affichée: ${CURRENCY_CONFIG.name} (${CURRENCY_CONFIG.code}) · Paiement PayDunya: XOF`);
   console.log(`🌍 Langues: ${Object.keys(SUPPORTED_LANGUAGES).join(', ')}`);
   console.log(`🤖 Fournisseur: ${process.env.MUSIC_PROVIDER || 'mureka'}`);
   await recoverPendingGenerations();

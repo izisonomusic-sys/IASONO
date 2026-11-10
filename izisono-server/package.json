@@ -1,7 +1,7 @@
 {
   "name": "izisono",
   "version": "1.1.0",
-  "description": "Studio de composition musicale assisté par IA avec paiements Mobile Money en Afrique de l’Ouest",
+  "description": "Studio de composition musicale assisté par IA avec paiement PayDunya SoftPay au Togo",
   "type": "module",
   "main": "server.js",
   "scripts": {
@@ -19,12 +19,12 @@
     "xof",
     "lomopay",
     "streaming",
-    "west-africa",
+    "togo",
     "ghana",
     "nigeria",
     "senegal",
     "ivory-coast",
-    "mobile-money"
+    "paydunya-softpay"
   ],
   "author": "izisono Team",
   "license": "MIT",

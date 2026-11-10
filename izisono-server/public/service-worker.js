@@ -1,4 +1,4 @@
-const CACHE='izisono-v20-shell';
+const CACHE='izisono-v21-shell';
 const SHELL=['/','/index.html','/styles.css','/script.js','/manifest.webmanifest','/assets/izisono-logo.png'];
 self.addEventListener('install',event=>{event.waitUntil(caches.open(CACHE).then(c=>c.addAll(SHELL)).then(()=>self.skipWaiting()).catch(()=>{}))});
 self.addEventListener('activate',event=>{event.waitUntil(caches.open(CACHE).then(async cache=>{
