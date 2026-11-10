@@ -9,7 +9,7 @@ const esc=s=>String(s??'').replace(/[&<>'"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&
 function toast(m){const x=$('#toast');x.textContent=m;x.classList.add('show');setTimeout(()=>x.classList.remove('show'),3200)}
 function addNotification(title,text){state.notifications.unshift({id:Date.now(),title,text,time:new Date().toISOString()});state.notifications=state.notifications.slice(0,12);localStorage.setItem('izisono_notifications',JSON.stringify(state.notifications));renderNotifications();}
 function renderNotifications(){const list=$('#notificationList');if(!list)return;list.innerHTML=state.notifications.length?state.notifications.map(n=>`<div class="notification-item"><span>♪</span><div><b>${esc(n.title)}</b><p>${esc(n.text)}</p><small>${new Date(n.time).toLocaleString()}</small></div></div>`).join(''):'<div class="notification-empty">Aucune notification pour le moment.</div>';$('#notificationDot').hidden=!state.notifications.length;}
-async function api(path,opt={}){const headers={'Content-Type':'application/json','Accept-Language':state.lang,...(opt.headers||{})};if(state.supabase){const {data}=await state.supabase.auth.getSession();if(data.session?.access_token)headers.Authorization=`Bearer ${data.session.access_token}`;}const r=await fetch(API+path,{...opt,headers});const body=await r.json().catch(()=>({}));if(!r.ok){const messages={email_confirmation_required:'Confirme ton adresse email avant de générer une chanson.',generation_rate_limited:'Trop de demandes. Attends une minute puis réessaie.',too_many_active_generations:'Tu as déjà trop de générations en cours.',daily_generation_limit:'La limite quotidienne de générations a été atteinte.',insufficient_credits:'Tu n’as pas assez de Notes.',mureka_api_key_missing:'Le service de génération IA n’est pas configuré.',lomopay_credentials_missing:'Le paiement LomoPay n’est pas encore configuré côté serveur.',lomopay_operator_not_configured:'Aucun opérateur Mobile Money n’est encore configuré pour ce pays.',otp_required:'Ton opérateur demande un code OTP. Saisis le code demandé puis réessaie.',lomopay_credentials_invalid:'Les clés API LomoPay configurées sont invalides ou mélangées entre test et production.',lomopay_currency_not_enabled:'Cette devise doit d’abord être activée et confirmée par LomoPay.',exchange_rate_unavailable:'Le taux de change est indisponible. Réessaie plus tard.',invalid_phone_number:'Vérifie le numéro de téléphone saisi.',unsupported_country:'Ce pays n’est pas encore pris en charge.'};throw new Error(messages[body.error]||body.error||body.message||'Erreur');}return body}
+async function api(path,opt={}){const headers={'Content-Type':'application/json','Accept-Language':state.lang,...(opt.headers||{})};if(state.supabase){const {data}=await state.supabase.auth.getSession();if(data.session?.access_token)headers.Authorization=`Bearer ${data.session.access_token}`;}const r=await fetch(API+path,{...opt,headers});const body=await r.json().catch(()=>({}));if(!r.ok){const messages={email_confirmation_required:'Confirme ton adresse email avant de générer une chanson.',generation_rate_limited:'Trop de demandes. Attends une minute puis réessaie.',too_many_active_generations:'Tu as déjà trop de générations en cours.',daily_generation_limit:'La limite quotidienne de générations a été atteinte.',insufficient_credits:'Tu n’as pas assez de Notes.',mureka_api_key_missing:'Le service de génération IA n’est pas configuré.',paydunya_credentials_missing:'Le paiement PayDunya n’est pas encore configuré côté serveur.'};throw new Error(messages[body.error]||body.error||body.message||'Erreur');}return body}
 async function bootSupabase(){
   const cfg=await api('/config');
   state.config=cfg;
@@ -64,7 +64,7 @@ function renderPaymentMethods(){
   const host=$('#paymentMethods');if(!host)return;
   state.paymentMethod=state.paymentMethods[0]?.code||'';
   const payButton=$('#payNowBtn');if(payButton)payButton.disabled=!state.paymentCurrencyEnabled||!state.paymentMethods.length;
-  if(!state.paymentCurrencyEnabled){host.innerHTML='<p class="empty">Le prix local est affiché, mais LomoPay n’a pas encore confirmé l’encaissement dans cette devise. Le paiement est temporairement indisponible dans ce pays.</p>';return;}
+  if(!state.paymentCurrencyEnabled){host.innerHTML='<p class="empty">Le paiement PayDunya SoftPay est disponible uniquement au Togo pour le moment.</p>';return;}
   host.innerHTML=state.paymentMethods.length?state.paymentMethods.map((m,i)=>`<button type="button" class="payment-method ${i===0?'selected':''}" data-method="${esc(m.code)}"><span class="method-icon">${esc(m.icon||'📱')}</span><span><b>${esc(m.name)}</b><small>${esc(m.short||m.name)}</small></span><span class="method-check">✓</span></button>`).join(''):'<p class="empty">Aucun opérateur de paiement n’est encore activé pour ce pays.</p>';
   host.querySelectorAll('.payment-method').forEach(btn=>btn.onclick=()=>{state.paymentMethod=btn.dataset.method;host.querySelectorAll('.payment-method').forEach(x=>x.classList.toggle('selected',x===btn));});
 }
@@ -94,12 +94,12 @@ function updatePaymentSummary(){
 function showPaymentPage(){if(!state.user)return login();if(!state.plans.find(p=>p.id===state.selectedPlan))return toast('Choisis d’abord un forfait.');updatePaymentSummary();showPage('payment');loadPaymentCountries();}
 async function buyPlan(plan){
   if(!state.user)return login();
-  const phone=($('#paymentPhone')?.value||'').trim(),otp=($('#paymentOtp')?.value||'').trim(),btn=$('#payNowBtn');
+  const phone=($('#paymentPhone')?.value||'').trim(),btn=$('#payNowBtn');
   if(!phone){toast('Entre ton numéro de téléphone.');$('#paymentPhone')?.focus();return;}
   if(!state.paymentMethod){toast('Aucun moyen de paiement n’est activé pour ce pays.');return;}
   if(btn){btn.disabled=true;btn.textContent='Lancement…';}
   try{
-    const d=await api('/billing/checkout',{method:'POST',body:JSON.stringify({plan,payment_method:state.paymentMethod,phone,country:state.paymentCountry,otp:otp||undefined})});
+    const d=await api('/billing/checkout',{method:'POST',body:JSON.stringify({plan,payment_method:state.paymentMethod,phone,country:state.paymentCountry})});
     addNotification('Paiement lancé',d.message||'Confirme la demande de paiement sur ton téléphone.');
     if(d.next_action?.url){location.href=d.next_action.url;return;}
     if(d.pending_confirmation){toast(d.message||'Confirme le paiement sur ton téléphone.');await pollPaymentStatus(d.payment_id);}
