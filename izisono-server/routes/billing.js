@@ -12,9 +12,35 @@ const PLANS = [
   { id:'popular', name:'Populaire', price:3490, credits:10, popular:true, description:'Le meilleur équilibre pour créer régulièrement' },
   { id:'premium', name:'Premium', price:9990, credits:24, popular:false, description:'Pour les créateurs intensifs et les événements' },
 ];
+const COUNTRIES = [
+  {code:'TG',name:'Togo',currency:'XOF',currency_name:'FCFA',dial:'228'},
+  {code:'BJ',name:'Bénin',currency:'XOF',currency_name:'FCFA',dial:'229'},
+  {code:'BF',name:'Burkina Faso',currency:'XOF',currency_name:'FCFA',dial:'226'},
+  {code:'CI',name:"Côte d’Ivoire",currency:'XOF',currency_name:'FCFA',dial:'225'},
+  {code:'ML',name:'Mali',currency:'XOF',currency_name:'FCFA',dial:'223'},
+  {code:'SN',name:'Sénégal',currency:'XOF',currency_name:'FCFA',dial:'221'}
+];
 const PAYMENT_METHODS = [
-  { code:'togocel', name:'Togocel Money', short:'T-Money', country:'TG', icon:'📱', channel:'t-money-togo', softpayPath:'/softpay/t-money-togo' },
-  { code:'moov_tg', name:'Moov Money Togo', short:'Moov Money', country:'TG', icon:'📲', channel:'moov-togo', softpayPath:'/softpay/moov-togo' },
+  {code:'togocel',name:'T-Money',short:'T-Money',country:'TG',icon:'📱',softpayPath:'/softpay/t-money-togo'},
+  {code:'moov_tg',name:'Moov Money Togo',short:'Moov Money',country:'TG',icon:'📲',softpayPath:'/softpay/moov-togo'},
+  {code:'moov_bj',name:'Moov Money Bénin',short:'Moov Money',country:'BJ',icon:'📲',softpayPath:'/softpay/moov-benin'},
+  {code:'mtn_bj',name:'MTN Mobile Money',short:'MTN MoMo',country:'BJ',icon:'📱',softpayPath:'/softpay/mtn-benin'},
+  {code:'celtiis_bj',name:'Celtiis Cash',short:'Celtiis Cash',country:'BJ',icon:'📱',softpayPath:'/softpay/celtiis-cash'},
+  {code:'orange_bf',name:'Orange Money Burkina',short:'Orange Money',country:'BF',icon:'🟠',softpayPath:'/softpay/orange-money-burkina',requiresCode:true,codeLabel:'Code OTP Orange Money',codeHint:'Saisis le code OTP demandé par le parcours Orange Money.'},
+  {code:'moov_bf',name:'Moov Money Burkina',short:'Moov Money',country:'BF',icon:'📲',softpayPath:'/softpay/moov-burkina'},
+  {code:'orange_ci',name:'Orange Money Côte d’Ivoire',short:'Orange Money',country:'CI',icon:'🟠',softpayPath:'/softpay/orange-money-ci',requiresCode:true,codeLabel:'Code de paiement Orange Money',codeHint:'Compose #144*82# puis choisis l’option 2 pour obtenir ton code de paiement.'},
+  {code:'mtn_ci',name:'MTN Mobile Money Côte d’Ivoire',short:'MTN MoMo',country:'CI',icon:'📱',softpayPath:'/softpay/mtn-ci'},
+  {code:'moov_ci',name:'Moov Money Côte d’Ivoire',short:'Moov Money',country:'CI',icon:'📲',softpayPath:'/softpay/moov-ci'},
+  {code:'wave_ci',name:'Wave Côte d’Ivoire',short:'Wave',country:'CI',icon:'🌊',softpayPath:'/softpay/wave-ci',redirect:true},
+  {code:'djamo_ci',name:'Djamo Côte d’Ivoire',short:'Djamo',country:'CI',icon:'💳',softpayPath:'/softpay/djamo',redirect:true},
+  {code:'orange_ml',name:'Orange Money Mali',short:'Orange Money',country:'ML',icon:'🟠',softpayPath:'/softpay/orange-money-mali'},
+  {code:'moov_ml',name:'Moov Money Mali',short:'Moov Money',country:'ML',icon:'📲',softpayPath:'/softpay/moov-mali'},
+  {code:'orange_sn',name:'Orange Money Sénégal',short:'Orange Money',country:'SN',icon:'🟠',softpayPath:'/softpay/new-orange-money-senegal',redirect:true},
+  {code:'free_sn',name:'Free Money Sénégal',short:'Free Money',country:'SN',icon:'📱',softpayPath:'/softpay/free-money-senegal'},
+  {code:'expresso_sn',name:'Expresso Sénégal',short:'Expresso',country:'SN',icon:'📱',softpayPath:'/softpay/expresso-senegal'},
+  {code:'wave_sn',name:'Wave Sénégal',short:'Wave',country:'SN',icon:'🌊',softpayPath:'/softpay/wave-senegal',redirect:true},
+  {code:'wizall_sn',name:'Wizall Sénégal',short:'Wizall',country:'SN',icon:'📱',softpayPath:'/softpay/wizall-money-senegal',confirmPath:'/softpay/wizall-money-senegal/confirm'},
+  {code:'djamo_sn',name:'Djamo Sénégal',short:'Djamo',country:'SN',icon:'💳',softpayPath:'/softpay/djamo',redirect:true}
 ];
 
 function paydunyaMode(){return String(process.env.PAYDUNYA_MODE||'live').toLowerCase()==='test'?'test':'live';}
@@ -100,32 +126,40 @@ async function paydunyaSoftPay(path, payload){
   }
   return data;
 }
-function normalizeTogoPhone(value){
+function normalizePhone(value,country){
   const digits=String(value||'').replace(/\D/g,'');
-  if(/^228\d{8}$/.test(digits)) return digits.slice(3);
-  if(/^0\d{8}$/.test(digits)) return digits.slice(1);
-  if(/^\d{8}$/.test(digits)) return digits;
-  throw Object.assign(new Error('invalid_togo_phone'),{status:400});
+  const dial=COUNTRIES.find(c=>c.code===country)?.dial||'';
+  let local=digits;
+  if(dial&&local.startsWith(dial)&&local.length>dial.length+5)local=local.slice(dial.length);
+  // Preserve a domestic leading zero when the provider's format requires it.
+  if(!/^\d{6,12}$/.test(local))throw Object.assign(new Error('invalid_phone_number'),{status:400});
+  return local;
 }
-function softPayPayload(method,{name,email,phone,paymentId}){
-  if(method.code==='togocel'){
-    return {
-      name_t_money:name,
-      email_t_money:email,
-      phone_t_money:phone,
-      payment_token:paymentId
-    };
+function softPayPayload(method,{name,email,phone,paymentId,extraCode}){
+  const common={payment_token:paymentId};
+  switch(method.code){
+    case 'togocel': return {name_t_money:name,email_t_money:email,phone_t_money:phone,...common};
+    case 'moov_tg': return {moov_togo_customer_fullname:name,moov_togo_email:email,moov_togo_customer_address:'Togo',moov_togo_phone_number:phone,...common};
+    case 'moov_bj': return {moov_benin_customer_fullname:name,moov_benin_email:email,moov_benin_phone_number:phone,...common};
+    case 'mtn_bj': return {mtn_benin_customer_fullname:name,mtn_benin_email:email,mtn_benin_phone_number:phone,mtn_benin_wallet_provider:'MTNBENIN',...common};
+    case 'celtiis_bj': return {celtiis_cash_customer_fullname:name,celtiis_cash_customer_email:email,celtiis_cash_phone_number:phone,...common};
+    case 'orange_bf': return {name_bf:name,email_bf:email,phone_bf:phone,otp_code:extraCode,...common};
+    case 'moov_bf': return {moov_burkina_faso_fullName:name,moov_burkina_faso_email:email,moov_burkina_faso_phone_number:phone,moov_burkina_faso_payment_token:paymentId};
+    case 'orange_ci': return {orange_money_ci_customer_fullname:name,orange_money_ci_email:email,orange_money_ci_phone_number:phone,orange_money_ci_otp:extraCode,...common};
+    case 'mtn_ci': return {mtn_ci_customer_fullname:name,mtn_ci_email:email,mtn_ci_phone_number:phone,mtn_ci_wallet_provider:'MTNCI',...common};
+    case 'moov_ci': return {moov_ci_customer_fullname:name,moov_ci_email:email,moov_ci_phone_number:phone,...common};
+    case 'wave_ci': return {wave_ci_fullName:name,wave_ci_email:email,wave_ci_phone:phone,wave_ci_payment_token:paymentId};
+    case 'djamo_ci': return {djamo_fullName:name,djamo_email:email,djamo_phone:phone,code_country:'ci',djamo_payment_token:paymentId};
+    case 'orange_ml': return {orange_money_mali_customer_fullname:name,orange_money_mali_email:email,orange_money_mali_phone_number:phone,orange_money_mali_customer_address:'Mali',...common};
+    case 'moov_ml': return {moov_ml_customer_fullname:name,moov_ml_email:email,moov_ml_phone_number:phone,moov_ml_customer_address:'Mali',...common};
+    case 'orange_sn': return {customer_name:name,customer_email:email,phone_number:phone,invoice_token:paymentId};
+    case 'free_sn': return {customer_name:name,customer_email:email,phone_number:phone,...common};
+    case 'expresso_sn': return {expresso_sn_fullName:name,expresso_sn_email:email,expresso_sn_phone:phone,...common};
+    case 'wave_sn': return {wave_senegal_fullName:name,wave_senegal_email:email,wave_senegal_phone:phone,wave_senegal_payment_token:paymentId};
+    case 'wizall_sn': return {customer_name:name,customer_email:email,phone_number:phone,invoice_token:paymentId};
+    case 'djamo_sn': return {djamo_fullName:name,djamo_email:email,djamo_phone:phone,code_country:'sn',djamo_payment_token:paymentId};
+    default: throw Object.assign(new Error('softpay_method_not_supported'),{status:400});
   }
-  if(method.code==='moov_tg'){
-    return {
-      moov_togo_customer_fullname:name,
-      moov_togo_email:email,
-      moov_togo_customer_address:'Togo',
-      moov_togo_phone_number:phone,
-      payment_token:paymentId
-    };
-  }
-  throw Object.assign(new Error('softpay_method_not_supported'),{status:400});
 }
 function verifyCallbackHash(data){
   const master=process.env.PAYDUNYA_MASTER_KEY;
@@ -162,31 +196,37 @@ async function creditFromPayment(paymentId){
   return transaction||{credited:false,status:'completed',paymentId};
 }
 
-router.get('/countries',(_req,res)=>res.json({countries:[{code:'TG',name:'Togo',currency:'XOF',currency_name:'FCFA',dial:'228',currency_enabled:true,methods_configured:true}]}));
+router.get('/countries',(_req,res)=>res.json({countries:COUNTRIES.map(c=>({...c,currency_enabled:true,methods_configured:PAYMENT_METHODS.some(m=>m.country===c.code)}))}));
 
-router.get('/plans',(_req,res)=>{
+router.get('/plans',(req,res)=>{
+  const country=String(req.query.country||'TG').toUpperCase();
   res.json({
     currency:PAYMENT_CURRENCY,
     display_currency:DISPLAY_CURRENCY,
     display_rate:displayRate(),
     payment_provider:'PayDunya SoftPay',
     plans:PLANS.map(p=>({...p,display_price:displayPrice(p.price)})),
-    payment_methods:PAYMENT_METHODS
+    payment_methods:PAYMENT_METHODS.filter(m=>m.country===country)
   });
 });
 
-router.get('/methods',(_req,res)=>res.json({currency:PAYMENT_CURRENCY,payment_provider:'PayDunya SoftPay',methods:PAYMENT_METHODS}));
+router.get('/methods',(req,res)=>{
+  const country=String(req.query.country||'TG').toUpperCase();
+  res.json({currency:PAYMENT_CURRENCY,payment_provider:'PayDunya SoftPay',methods:PAYMENT_METHODS.filter(m=>m.country===country)});
+});
 
 router.post('/checkout',async(req,res)=>{
   try{
     const {user}=await requireUser(req);
     const plan=PLANS.find(p=>p.id===req.body?.plan);
+    const country=String(req.body?.country||'TG').toUpperCase();
     const requestedMethod=String(req.body?.payment_method||'togocel');
-    const selected=PAYMENT_METHODS.find(m=>m.code===requestedMethod);
-    if(!selected) return res.status(400).json({error:'invalid_payment_method'});
+    const selected=PAYMENT_METHODS.find(m=>m.code===requestedMethod&&m.country===country);
+    if(!selected) return res.status(400).json({error:'invalid_payment_method_for_country'});
     if(!plan) return res.status(400).json({error:'invalid_plan'});
-
-    const phone=normalizeTogoPhone(req.body?.phone);
+    const extraCode=String(req.body?.extra_code||'').trim();
+    if(selected.requiresCode&&!extraCode) return res.status(400).json({error:'payment_confirmation_code_required'});
+    const phone=normalizePhone(req.body?.phone,country);
     const url=publicUrl();
     const email=user.email||'';
     const customerName=(email.split('@')[0]||'Utilisateur').replace(/[^a-zA-ZÀ-ÿ0-9 _-]/g,' ').trim().slice(0,60)||'Utilisateur';
@@ -199,7 +239,7 @@ router.post('/checkout',async(req,res)=>{
     const invoicePayload={
       invoice:baseInvoice,
       store:{name:'izisono',tagline:'Studio musical IA',website_url:url},
-      custom_data:{user_id:user.id,plan_id:plan.id,credits:String(plan.credits),product:'izisono_notes',payment_method:requestedMethod},
+      custom_data:{user_id:user.id,plan_id:plan.id,credits:String(plan.credits),product:'izisono_notes',payment_method:requestedMethod,country},
       actions:{
         cancel_url:`${url}/?payment=cancelled`,
         return_url:`${url}/?payment=return`,
@@ -217,7 +257,9 @@ router.post('/checkout',async(req,res)=>{
 
     let softpay;
     try{
-      softpay=await paydunyaSoftPay(selected.softpayPath,softPayPayload(selected,{name:customerName,email,phone,paymentId}));
+      softpay=await paydunyaSoftPay(selected.softpayPath,softPayPayload(selected,{name:customerName,email,phone,paymentId,extraCode}));
+      // Wizall is a documented two-step flow: the authorization code is issued
+      // only after the first request, so confirmation is completed separately.
     }catch(error){
       const code=Number(error.status||0);
       const definitive=code>=400&&code<500&&![408,409,425,429].includes(code);
@@ -242,13 +284,36 @@ router.post('/checkout',async(req,res)=>{
       display_currency:DISPLAY_CURRENCY,
       payment_currency:PAYMENT_CURRENCY,
       payment_provider:'PayDunya SoftPay',
-      payment_method:requestedMethod
+      payment_method:requestedMethod,
+      ...(softpay?.url?{next_action:{type:'redirect',url:softpay.url}}:{}),
+      ...(selected.confirmPath?{confirmation_required:true,confirmation_transaction_id:softpay?.data?.TransactionID||softpay?.data?.transaction_id||null}:{})
     });
   }catch(e){
     console.error('PayDunya SoftPay checkout failed',e);
     res.status(e.status||500).json({error:e.message||'checkout_failed',details:e.payload});
   }
 });
+router.post('/wizall-confirm',async(req,res)=>{
+  try{
+    const {user}=await requireUser(req);
+    const paymentId=String(req.body?.payment_id||'').trim();
+    const transactionId=String(req.body?.transaction_id||'').trim();
+    const authorizationCode=String(req.body?.authorization_code||'').trim();
+    if(!paymentId||!transactionId||!authorizationCode) return res.status(400).json({error:'wizall_confirmation_data_missing'});
+    const verified=await fetchPayment(paymentId);
+    const p=verified?.data||verified||{};
+    const metadata=p.custom_data||{};
+    if(metadata.user_id!==user.id||metadata.payment_method!=='wizall_sn') return res.status(403).json({error:'payment_forbidden'});
+    const phone=normalizePhone(req.body?.phone,'SN');
+    const confirmation=await paydunyaSoftPay('/softpay/wizall-money-senegal/confirm',{
+      authorization_code:authorizationCode,phone_number:phone,transaction_id:transactionId
+    });
+    let result={credited:false,status:'pending',paymentId};
+    try{result=await creditFromPayment(paymentId);}catch(verifyError){console.warn('Wizall verification deferred',verifyError.message);}
+    res.json({ok:true,...result,confirmation_message:confirmation?.message||null});
+  }catch(e){res.status(e.status||500).json({error:e.message||'wizall_confirmation_failed'});}
+});
+
 router.get('/verify/:paymentId',async(req,res)=>{
   try{
     const {user}=await requireUser(req);
