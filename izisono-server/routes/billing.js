@@ -39,7 +39,7 @@ const PAYMENT_METHODS = [
   {code:'free_sn',name:'Free Money Sénégal',short:'Free Money',country:'SN',icon:'📱',softpayPath:'/softpay/free-money-senegal'},
   {code:'expresso_sn',name:'Expresso Sénégal',short:'Expresso',country:'SN',icon:'📱',softpayPath:'/softpay/expresso-senegal'},
   {code:'wave_sn',name:'Wave Sénégal',short:'Wave',country:'SN',icon:'🌊',softpayPath:'/softpay/wave-senegal',redirect:true},
-  {code:'wizall_sn',name:'Wizall Sénégal',short:'Wizall',country:'SN',icon:'📱',softpayPath:'/softpay/wizall-money-senegal',requiresCode:true,codeLabel:'Code de confirmation Wizall',confirmPath:'/softpay/wizall-money-senegal/confirm'},
+  {code:'wizall_sn',name:'Wizall Sénégal',short:'Wizall',country:'SN',icon:'📱',softpayPath:'/softpay/wizall-money-senegal',confirmPath:'/softpay/wizall-money-senegal/confirm'},
   {code:'djamo_sn',name:'Djamo Sénégal',short:'Djamo',country:'SN',icon:'💳',softpayPath:'/softpay/djamo',redirect:true}
 ];
 
@@ -131,7 +131,7 @@ function normalizePhone(value,country){
   const dial=COUNTRIES.find(c=>c.code===country)?.dial||'';
   let local=digits;
   if(dial&&local.startsWith(dial)&&local.length>dial.length+5)local=local.slice(dial.length);
-  if(local.startsWith('0'))local=local.slice(1);
+  // Preserve a domestic leading zero when the provider's format requires it.
   if(!/^\d{6,12}$/.test(local))throw Object.assign(new Error('invalid_phone_number'),{status:400});
   return local;
 }
@@ -258,13 +258,8 @@ router.post('/checkout',async(req,res)=>{
     let softpay;
     try{
       softpay=await paydunyaSoftPay(selected.softpayPath,softPayPayload(selected,{name:customerName,email,phone,paymentId,extraCode}));
-      if(selected.confirmPath){
-        const confirmed=await paydunyaSoftPay(selected.confirmPath,{
-          authorization_code:extraCode,phone_number:phone,
-          transaction_id:softpay?.data?.TransactionID||softpay?.data?.transaction_id
-        });
-        softpay={...softpay,...confirmed};
-      }
+      // Wizall is a documented two-step flow: the authorization code is issued
+      // only after the first request, so confirmation is completed separately.
     }catch(error){
       const code=Number(error.status||0);
       const definitive=code>=400&&code<500&&![408,409,425,429].includes(code);
@@ -290,13 +285,35 @@ router.post('/checkout',async(req,res)=>{
       payment_currency:PAYMENT_CURRENCY,
       payment_provider:'PayDunya SoftPay',
       payment_method:requestedMethod,
-      ...(softpay?.url?{next_action:{type:'redirect',url:softpay.url}}:{})
+      ...(softpay?.url?{next_action:{type:'redirect',url:softpay.url}}:{}),
+      ...(selected.confirmPath?{confirmation_required:true,confirmation_transaction_id:softpay?.data?.TransactionID||softpay?.data?.transaction_id||null}:{})
     });
   }catch(e){
     console.error('PayDunya SoftPay checkout failed',e);
     res.status(e.status||500).json({error:e.message||'checkout_failed',details:e.payload});
   }
 });
+router.post('/wizall-confirm',async(req,res)=>{
+  try{
+    const {user}=await requireUser(req);
+    const paymentId=String(req.body?.payment_id||'').trim();
+    const transactionId=String(req.body?.transaction_id||'').trim();
+    const authorizationCode=String(req.body?.authorization_code||'').trim();
+    if(!paymentId||!transactionId||!authorizationCode) return res.status(400).json({error:'wizall_confirmation_data_missing'});
+    const verified=await fetchPayment(paymentId);
+    const p=verified?.data||verified||{};
+    const metadata=p.custom_data||{};
+    if(metadata.user_id!==user.id||metadata.payment_method!=='wizall_sn') return res.status(403).json({error:'payment_forbidden'});
+    const phone=normalizePhone(req.body?.phone,'SN');
+    const confirmation=await paydunyaSoftPay('/softpay/wizall-money-senegal/confirm',{
+      authorization_code:authorizationCode,phone_number:phone,transaction_id:transactionId
+    });
+    let result={credited:false,status:'pending',paymentId};
+    try{result=await creditFromPayment(paymentId);}catch(verifyError){console.warn('Wizall verification deferred',verifyError.message);}
+    res.json({ok:true,...result,confirmation_message:confirmation?.message||null});
+  }catch(e){res.status(e.status||500).json({error:e.message||'wizall_confirmation_failed'});}
+});
+
 router.get('/verify/:paymentId',async(req,res)=>{
   try{
     const {user}=await requireUser(req);
