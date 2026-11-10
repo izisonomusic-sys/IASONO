@@ -65,8 +65,8 @@ function renderPaymentMethods(){
   state.paymentMethod=state.paymentMethods[0]?.code||'';
   const payButton=$('#payNowBtn');if(payButton)payButton.disabled=!state.paymentCurrencyEnabled||!state.paymentMethods.length;
   host.innerHTML=state.paymentMethods.length?state.paymentMethods.map((m,i)=>`<button type="button" class="payment-method ${i===0?'selected':''}" data-method="${esc(m.code)}"><span class="method-icon">${esc(m.icon||'📱')}</span><span><b>${esc(m.name)}</b><small>${esc(m.short||m.name)}</small></span><span class="method-check">✓</span></button>`).join(''):'<p class="empty">Aucun opérateur de paiement documenté pour ce pays.</p>';
-  const extra=$('#paymentExtraCode'),extraLabel=$('#paymentExtraCodeLabel');
-  const updateExtra=method=>{if(!extra||!extraLabel)return;extra.hidden=!method?.requiresCode;extra.required=!!method?.requiresCode;extraLabel.textContent=method?.codeLabel||'Code de confirmation';if(!method?.requiresCode)extra.value='';};
+  const extra=$('#paymentExtraCode'),extraLabel=$('#paymentExtraCodeLabel'),extraField=$('#paymentExtraCodeField'),extraHint=$('#paymentExtraCodeHint');
+  const updateExtra=method=>{if(!extra||!extraLabel||!extraField)return;extraField.hidden=!method?.requiresCode;extra.required=!!method?.requiresCode;extraLabel.textContent=method?.codeLabel||'Code de confirmation';if(extraHint)extraHint.textContent=method?.codeHint||'';if(!method?.requiresCode)extra.value='';};
   updateExtra(state.paymentMethods[0]);
   host.querySelectorAll('.payment-method').forEach(btn=>btn.onclick=()=>{state.paymentMethod=btn.dataset.method;host.querySelectorAll('.payment-method').forEach(x=>x.classList.toggle('selected',x===btn));updateExtra(state.paymentMethods.find(m=>m.code===state.paymentMethod));});
 }
@@ -110,6 +110,13 @@ async function buyPlan(plan){
     const d=await api('/billing/checkout',{method:'POST',body:JSON.stringify({plan,payment_method:state.paymentMethod,phone,country:state.paymentCountry,extra_code:extraCode})});
     addNotification('Paiement lancé',d.message||'Confirme la demande de paiement sur ton téléphone.');
     if(d.next_action?.url){location.href=d.next_action.url;return;}
+    if(d.confirmation_required){
+      const authorizationCode=window.prompt('Wizall : saisis le code de confirmation reçu après la demande de paiement.');
+      if(authorizationCode?.trim()){
+        const confirmed=await api('/billing/wizall-confirm',{method:'POST',body:JSON.stringify({payment_id:d.payment_id,transaction_id:d.confirmation_transaction_id,authorization_code:authorizationCode.trim(),phone})});
+        if(confirmed.credited){toast('Paiement confirmé : tes Notes sont ajoutées.');await loadCredits();showPage('notes');return;}
+      }else{toast('Paiement lancé. La confirmation Wizall reste à terminer.');return;}
+    }
     if(d.pending_confirmation){toast(d.message||'Confirme le paiement sur ton téléphone.');await pollPaymentStatus(d.payment_id);}
     else if(d.credited||['completed','success'].includes(String(d.status||'').toLowerCase())){toast(`Paiement confirmé : +${d.plan?.credits||0} Notes`);await loadCredits();showPage('notes');}
   }catch(e){toast(e.message||'Impossible de lancer le paiement.');}
