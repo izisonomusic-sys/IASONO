@@ -211,11 +211,17 @@ router.post('/checkout',async(req,res)=>{
     const paymentId=invoice?.token||invoice?.data?.token;
     if(!paymentId) throw new Error('paydunya_payment_token_missing');
 
+    // Persist the PayDunya token before contacting SoftPay so an ambiguous network
+    // result can be reconciled instead of losing a possibly accepted payment.
+    await createPaymentTransaction({userId:user.id,paymentId,plan,method:requestedMethod,rawPayload:{provider:'paydunya_softpay',invoice},status:'initiated'});
+
     let softpay;
     try{
       softpay=await paydunyaSoftPay(selected.softpayPath,softPayPayload(selected,{name:customerName,email,phone,paymentId}));
     }catch(error){
-      try{await createPaymentTransaction({userId:user.id,paymentId,plan,method:requestedMethod,rawPayload:{invoice,error:error.payload||error.message},status:'failed'});}catch(recordError){console.error('Failed to record SoftPay failure',recordError);}
+      const code=Number(error.status||0);
+      const definitive=code>=400&&code<500&&![408,409,425,429].includes(code);
+      try{await createPaymentTransaction({userId:user.id,paymentId,plan,method:requestedMethod,rawPayload:{provider:'paydunya_softpay',invoice,error:error.payload||error.message,ambiguous:!definitive},status:definitive?'failed':'initiated'});}catch(recordError){console.error('Failed to record SoftPay result',recordError);}
       throw Object.assign(new Error(error.message||'softpay_payment_failed'),{status:error.status||502,payload:error.payload});
     }
 
