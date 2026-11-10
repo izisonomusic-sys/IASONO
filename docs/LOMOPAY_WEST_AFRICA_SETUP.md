@@ -1,58 +1,75 @@
-# LomoPay — configuration Afrique de l’Ouest
+# IA SONO — préparation LomoPay Direct API (Mobile Money)
 
-Cette branche ajoute la sélection du pays, les prix convertis depuis les tarifs de référence XOF, les méthodes Mobile Money configurées par pays, le champ OTP et la gestion des redirections LomoPay.
+## Architecture confirmée
+
+- Frontend : `izisono-server/public/script.js` (servi par Express).
+- API : Express, route de paiement `/api/billing`.
+- Création d'une demande Mobile Money : `POST https://lomopay.net/api/v1/direct.php`.
+- Référence interne : `izo_<UUID>`, enregistrée dans `public.payment_transactions`.
+- Confirmation : webhook signé LomoPay, puis vérification serveur-à-serveur auprès de LomoPay avant crédit.
+- Crédit : RPC Supabase `apply_paydunya_payment` avec `p_gateway='lomopay'`. Le nom historique de la fonction est conservé pour éviter une migration risquée ; son paramètre `p_gateway` identifie réellement LomoPay.
+
+## URL du webhook à enregistrer dans LomoPay
+
+```
+https://VOTRE-DOMAINE-PUBLIC/api/billing/lomopay-webhook
+```
+
+L'URL doit être publique et en HTTPS en production. Le serveur transmet automatiquement cette URL dans le champ `webhook_url` à chaque appel Direct API.
+
+Événement de paiement attendu : `payment.succeeded`, `payment.updated`, `payment.failed`.
+
+Le serveur :
+1. lit le corps HTTP brut ;
+2. vérifie `X-LomoPay-Signature` avec HMAC-SHA256 et la clé secrète ;
+3. retrouve la transaction grâce à `data.external_reference` ;
+4. interroge LomoPay à nouveau pour confirmer le statut, le montant et la devise ;
+5. appelle la RPC Supabase idempotente uniquement si le paiement est réellement `completed`.
+
+Ne pas retirer le middleware `express.raw()` avant `express.json()` pour la route webhook : la signature dépend des octets exacts du corps reçu.
 
 ## Variables Render
 
-Conserver les variables Supabase déjà présentes. Vérifier notamment :
+Configurer dans le service web Render :
 
-- `SUPABASE_URL`
-- `SUPABASE_SERVICE_ROLE_KEY`
-- `PUBLIC_APP_URL` (URL publique du site, par exemple `https://iasono.onrender.com`)
-- `LOMOPAY_PUBLIC_KEY`
-- `LOMOPAY_SECRET_KEY`
+- `PUBLIC_APP_URL` : URL HTTPS publique du service.
+- `CLIENT_URL` : même origine publique (ou liste d'origines autorisées séparées par des virgules).
+- `SUPABASE_URL` : URL du projet Supabase Winner / `izisono`.
+- `SUPABASE_PUBLISHABLE_KEY` : clé publique Supabase.
+- `SUPABASE_SERVICE_ROLE_KEY` : clé secrète uniquement côté serveur.
+- `LOMOPAY_PUBLIC_KEY` : clé publique LomoPay.
+- `LOMOPAY_SECRET_KEY` : clé secrète LomoPay.
+- `LOMOPAY_ENABLED_CURRENCIES=XOF` : rester sur XOF pour le lancement Togo.
+- `LOMOPAY_COUNTRY_OPERATORS_JSON` : codes d'opérateur exacts communiqués par LomoPay.
 
-Ajouter ensuite :
+Les clés secrètes ne doivent jamais être ajoutées au frontend, au dépôt GitHub ou à une capture d'écran.
 
-- `LOMOPAY_ENABLED_CURRENCIES`: laisser `XOF` tant que LomoPay n’a pas confirmé par écrit les autres devises et routes Direct API. Après confirmation seulement, ajouter les codes confirmés, séparés par des virgules, par exemple `XOF,GHS`.
-- `LOMOPAY_COUNTRY_OPERATORS_JSON`: JSON qui associe chaque pays aux codes opérateur de collecte exacts communiqués par LomoPay.
+## Attention aux prérequis LomoPay
 
-Structure attendue (les valeurs de code ci-dessous sont des exemples de remplacement, PAS des codes opérateur réels) :
+L'endpoint `/direct.php` est réservé aux comptes/plans LomoPay qui ont l'accès Direct API. LomoPay peut répondre `plan_required` si cette option n'est pas activée.
 
-```json
-{
-  "TG": [
-    { "code": "REMPLACER_PAR_CODE_LOMOPAY_TG", "name": "T-Money", "short": "T-Money", "icon": "📱" },
-    { "code": "REMPLACER_PAR_CODE_LOMOPAY_TG", "name": "Moov Money", "short": "Moov Money", "icon": "📲" }
-  ],
-  "CI": [
-    { "code": "REMPLACER_PAR_CODE_LOMOPAY_CI", "name": "Mobile Money", "short": "Mobile Money", "icon": "📱" }
-  ],
-  "SN": [
-    { "code": "REMPLACER_PAR_CODE_LOMOPAY_SN", "name": "Mobile Money", "short": "Mobile Money", "icon": "📱" }
-  ]
-}
-```
+Les codes opérateur ne doivent pas être devinés. Demander à LomoPay les codes exacts pour Togo (T-Money / Togocel et Moov Money) et confirmer que la collecte Direct API en XOF est activée sur le compte.
 
-Répéter le format pour les pays et opérateurs dont LomoPay a confirmé la collecte. Les anciens paramètres `LOMOPAY_TG_TOGOCEL_OPERATOR` et `LOMOPAY_TG_MOOV_OPERATOR` restent acceptés si le JSON complet n’est pas défini.
+Le code propose plusieurs pays, mais seuls les pays dont la devise et les opérateurs sont confirmés doivent être activés. Pour le premier test au Togo, garder uniquement XOF.
 
-## Pays et devises gérés par le code
+## Séquence de test sans risque
 
-- XOF : TG, CI, SN, ML, BF, BJ, NE
-- GHS : GH
-- NGN : NG
-- GNF : GN
-- SLE : SL
-- LRD : LR
+1. Configurer les clés `pk_test_` et `sk_test_` ensemble (ne jamais mélanger test et live).
+2. Configurer les codes opérateur de test fournis par LomoPay.
+3. Déployer la branche de préparation après validation.
+4. Créer un compte utilisateur de test et utiliser un forfait à petit montant.
+5. Vérifier le statut dans le tableau de bord LomoPay, le webhook Render et `payment_transactions`.
+6. Vérifier que le solde de crédits augmente une seule fois, même si LomoPay renvoie le webhook plusieurs fois.
+7. Passer en production uniquement après réussite des tests et remplacement des deux clés par les clés live correspondantes.
 
-Le backend calcule le montant local à partir des prix de référence XOF avec le service de taux de change ExchangeRate-API (cache serveur de 6 heures). En cas d’indisponibilité du taux, le checkout est bloqué plutôt que d’utiliser un taux inventé.\n\nÀ la date de cette intégration, la documentation LomoPay énumère XOF, XAF, EUR et USD comme devises de paiement. GHS, NGN, GNF, SLE et LRD ne sont pas énumérées : elles restent donc désactivées tant que LomoPay n’a pas confirmé leur prise en charge Direct API pour votre compte. La documentation identifie également Orange CI, BF, SN et GN comme opérateurs pouvant nécessiter l’OTP `#144#391#`.
+## Dépannage
 
-## Conditions avant activation réelle
+- `public_app_url_missing` / `public_app_url_must_be_public_https` : corriger `PUBLIC_APP_URL`.
+- `lomopay_credentials_missing` : renseigner les deux clés.
+- `lomopay_credentials_invalid` : vérifier qu'elles sont toutes deux test ou toutes deux live.
+- `lomopay_operator_not_configured` : ajouter les codes opérateur réels.
+- `plan_required` : demander l'activation de Direct API dans le compte LomoPay.
+- `invalid_signature` : vérifier la clé secrète et conserver le corps brut HTTP.
+- `payment_reference_unknown` / `payment_reference_mismatch` : vérifier la référence renvoyée par LomoPay.
 
-1. Obtenir de LomoPay les codes opérateur de collecte Direct API exacts pour chaque pays.
-2. Faire confirmer que le compte LomoPay autorise Direct API et chaque devise (XOF, GHS, NGN, GNF, SLE, LRD) ainsi que chaque route.
-3. Ajouter uniquement les devises confirmées à `LOMOPAY_ENABLED_CURRENCIES`.
-4. Ajouter les codes opérateur exacts à `LOMOPAY_COUNTRY_OPERATORS_JSON`.
-5. Tester chaque route en environnement de test avant d'activer les paiements réels.
-
-Les visiteurs peuvent sélectionner les 12 pays pour consulter une estimation du prix local lorsque le service de change fournit le taux. Pour les devises non confirmées, l’interface indique que le paiement n’est pas activé et le backend refuse le checkout. Le code ne prétend pas que LomoPay prend en charge une devise ou un opérateur tant que cela n’a pas été confirmé.
+Documentation officielle : https://www.lomopay.net/en/docs-api

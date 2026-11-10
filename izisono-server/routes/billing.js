@@ -54,11 +54,14 @@ function enabledCurrencies() {
 function operatorConfig() {
   try {
     const raw=process.env.LOMOPAY_COUNTRY_OPERATORS_JSON;
-    if(raw){const parsed=JSON.parse(raw);return parsed&&typeof parsed==='object'?parsed:{};}
-    const legacy={};
-    if(process.env.LOMOPAY_TG_TOGOCEL_OPERATOR)legacy.TG=[{code:process.env.LOMOPAY_TG_TOGOCEL_OPERATOR,name:'Togocel Money',short:'T-Money',icon:'📱'}];
-    if(process.env.LOMOPAY_TG_MOOV_OPERATOR)legacy.TG=[...(legacy.TG||[]),{code:process.env.LOMOPAY_TG_MOOV_OPERATOR,name:'Moov Money Togo',short:'Moov Money',icon:'📲'}];
-    return legacy;
+    const parsed=raw ? JSON.parse(raw) : {};
+    const configured=parsed&&typeof parsed==='object'&&!Array.isArray(parsed)?parsed:{};
+    const legacy=[];
+    if(process.env.LOMOPAY_TG_TOGOCEL_OPERATOR)legacy.push({code:process.env.LOMOPAY_TG_TOGOCEL_OPERATOR,name:'Togocel Money',short:'T-Money',icon:'📱'});
+    if(process.env.LOMOPAY_TG_MOOV_OPERATOR)legacy.push({code:process.env.LOMOPAY_TG_MOOV_OPERATOR,name:'Moov Money Togo',short:'Moov Money',icon:'📲'});
+    // An empty JSON object (or an empty TG list) must not mask legacy Render variables.
+    if((!Array.isArray(configured.TG)||configured.TG.length===0)&&legacy.length)configured.TG=legacy;
+    return configured;
   } catch { throw Object.assign(new Error('lomopay_operator_config_invalid'), { status:500 }); }
 }
 function methodsFor(countryCode) {
@@ -96,7 +99,18 @@ async function plansFor(country) {
   return plans;
 }
 function publicUrl() {
-  return String(process.env.PUBLIC_APP_URL || process.env.CLIENT_URL || 'http://localhost:3000').split(',')[0].trim().replace(/\/$/,'');
+  const configured = String(process.env.PUBLIC_APP_URL || process.env.CLIENT_URL || '').split(',')[0].trim();
+  if (!configured) throw Object.assign(new Error('public_app_url_missing'), { status:503 });
+  let parsed;
+  try { parsed = new URL(configured); }
+  catch { throw Object.assign(new Error('public_app_url_invalid'), { status:503 }); }
+  if (!['http:', 'https:'].includes(parsed.protocol) || parsed.username || parsed.password ||
+      ['localhost','127.0.0.1','::1'].includes(parsed.hostname.toLowerCase()) ||
+      (process.env.NODE_ENV === 'production' && parsed.protocol !== 'https:') ||
+      (parsed.port && !['80','443','8080','8443'].includes(parsed.port))) {
+    throw Object.assign(new Error('public_app_url_must_be_public_https'), { status:503 });
+  }
+  return parsed.origin;
 }
 function normalizePhone(value,country) {
   let digits = String(value||'').replace(/\D/g,'');
@@ -109,7 +123,7 @@ function normalizePhone(value,country) {
 }
 function lomo(path,options={}) {
   const {publicKey,secretKey} = credentials();
-  return fetch(BASE+path,{...options,headers:{'X-Public-Key':publicKey,'X-Secret-Key':secretKey,'Content-Type':'application/json',Accept:'application/json',...(options.headers||{})}})
+  return fetch(BASE+path,{...options,signal:options.signal||AbortSignal.timeout(20000),headers:{'X-Public-Key':publicKey,'X-Secret-Key':secretKey,'Content-Type':'application/json',Accept:'application/json',...(options.headers||{})}})
     .then(async r=>{const data=await r.json().catch(()=>({}));if(!r.ok||data?.success===false){const code=data?.error?.code||data?.code||data?.error||data?.message||`lomopay_http_${r.status}`;throw Object.assign(new Error(String(code)),{status:r.status||502,payload:data});}return data;});
 }
 function payloadData(x) { return x?.data?.data || x?.data || x || {}; }
@@ -133,6 +147,7 @@ async function creditPayment(ref) {
   const plan=PLANS.find(x=>x.id===local.plan_id);
   if (!plan) throw new Error('payment_metadata_invalid');
   const p=await getPayment(ref);
+  if (p.external_reference && String(p.external_reference) !== String(ref)) throw new Error('payment_reference_mismatch');
   const providerCurrency=String(p.currency||'').toUpperCase();
   if (providerCurrency!==String(local.currency).toUpperCase()) throw new Error('payment_currency_invalid');
   const amount=Number(p.amount??p.total_amount);
@@ -171,9 +186,10 @@ router.post('/checkout',async(req,res)=>{
     if(!operator)return res.status(503).json({error:'lomopay_operator_not_configured'});
     const phone=normalizePhone(req.body?.phone,country), amount=await localPrice(plan.price,country.currency);
     const email=user.email||'', name=(email.split('@')[0]||'Utilisateur').replace(/[^a-zA-ZÀ-ÿ0-9 _-]/g,' ').trim().slice(0,60)||'Utilisateur';
+    const webhookUrl=publicUrl()+'/api/billing/lomopay-webhook';
     ref='izo_'+crypto.randomUUID();ctx={userId:user.id,plan,method};
     await recordInitial({userId:user.id,paymentId:ref,plan,amount,currency:country.currency,method,payload:{provider:'lomopay',country:country.code,external_reference:ref}});
-    const response=await lomo('/direct.php',{method:'POST',headers:{'Idempotency-Key':ref},body:JSON.stringify({amount,currency:country.currency,country:country.code,operator,phone,method:'mobile_money',customer_name:name,customer_email:email,external_reference:ref,webhook_url:publicUrl()+'/api/billing/lomopay-webhook',...(req.body?.otp?{otp:String(req.body.otp).trim()}: {})})});
+    const response=await lomo('/direct.php',{method:'POST',headers:{'Idempotency-Key':ref},body:JSON.stringify({amount,currency:country.currency,country:country.code,operator,phone,method:'mobile_money',customer_name:name,customer_email:email,external_reference:ref,webhook_url:webhookUrl,...(req.body?.otp?{otp:String(req.body.otp).trim()}: {})})});
     const p=payloadData(response),providerId=p.id||p.payment_id||null,status=String(p.status||'pending').toLowerCase();
     await updateLocal(ref,{status:status==='failed'?'failed':'pending',raw_payload:{provider:'lomopay',provider_id:providerId,response},updated_at:new Date().toISOString()});
     let verification={credited:false,status,paymentId:ref};
@@ -181,7 +197,11 @@ router.post('/checkout',async(req,res)=>{
     const action=p.next_action||{};
     return res.json({ok:true,payment_id:ref,provider_payment_id:providerId,status:verification.status||status,credited:!!verification.credited||['success','completed'].includes(String(verification.status||status).toLowerCase()),pending_confirmation:!verification.credited&&!['success','completed','failed'].includes(String(verification.status||status).toLowerCase()),message:action.message||(action.type==='confirm_on_phone'?'Une demande de paiement a été envoyée sur ton téléphone. Confirme-la avec ton code PIN.':'Paiement lancé.'),next_action:{type:action.type||'confirm_on_phone',url:action.url||null,otp_required:!!(p.otp_required||action.otp_required)},plan:{...plan,display_price:amount,currency:country.currency},country:country.code,display_currency:CURRENCY_NAMES[country.currency],payment_currency:country.currency,payment_provider:'LomoPay Direct API',payment_method:method});
   } catch(e) {
-    if(ref&&ctx){try{await updateLocal(ref,{status:'failed',raw_payload:{provider:'lomopay',error:e.payload||e.message},updated_at:new Date().toISOString()});}catch(re){console.error('Failed to record LomoPay failure:',re.message);}}
+    if(ref&&ctx){
+      const code=Number(e.status||0), definitive=code>=400&&code<500&&![408,409,425,429].includes(code);
+      try{await updateLocal(ref,{status:definitive?'failed':'initiated',raw_payload:{provider:'lomopay',error:e.payload||e.message,ambiguous:!definitive},updated_at:new Date().toISOString()});}
+      catch(re){console.error('Failed to record LomoPay checkout result:',re.message);}
+    }
     console.error('LomoPay Direct checkout failed:',e.message);
     return res.status(e.status||500).json({error:e.message||'checkout_failed'});
   }
