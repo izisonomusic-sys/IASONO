@@ -54,11 +54,14 @@ function enabledCurrencies() {
 function operatorConfig() {
   try {
     const raw=process.env.LOMOPAY_COUNTRY_OPERATORS_JSON;
-    if(raw){const parsed=JSON.parse(raw);return parsed&&typeof parsed==='object'?parsed:{};}
-    const legacy={};
-    if(process.env.LOMOPAY_TG_TOGOCEL_OPERATOR)legacy.TG=[{code:process.env.LOMOPAY_TG_TOGOCEL_OPERATOR,name:'Togocel Money',short:'T-Money',icon:'📱'}];
-    if(process.env.LOMOPAY_TG_MOOV_OPERATOR)legacy.TG=[...(legacy.TG||[]),{code:process.env.LOMOPAY_TG_MOOV_OPERATOR,name:'Moov Money Togo',short:'Moov Money',icon:'📲'}];
-    return legacy;
+    const parsed=raw ? JSON.parse(raw) : {};
+    const configured=parsed&&typeof parsed==='object'&&!Array.isArray(parsed)?parsed:{};
+    const legacy=[];
+    if(process.env.LOMOPAY_TG_TOGOCEL_OPERATOR)legacy.push({code:process.env.LOMOPAY_TG_TOGOCEL_OPERATOR,name:'Togocel Money',short:'T-Money',icon:'📱'});
+    if(process.env.LOMOPAY_TG_MOOV_OPERATOR)legacy.push({code:process.env.LOMOPAY_TG_MOOV_OPERATOR,name:'Moov Money Togo',short:'Moov Money',icon:'📲'});
+    // An empty JSON object (or an empty TG list) must not mask legacy Render variables.
+    if((!Array.isArray(configured.TG)||configured.TG.length===0)&&legacy.length)configured.TG=legacy;
+    return configured;
   } catch { throw Object.assign(new Error('lomopay_operator_config_invalid'), { status:500 }); }
 }
 function methodsFor(countryCode) {
