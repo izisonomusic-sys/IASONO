@@ -131,7 +131,7 @@ app.get('*', async (_req, res) => {
 const port = process.env.PORT || 3000;
 app.listen(port, async () => {
   console.log(`🎵 izisono backend prêt sur http://localhost:${port}`);
-  console.log('📍 Zone de paiement: Togo — PayDunya SoftPay (T-Money / Moov Money)');
+  console.log('📍 Zone de paiement: Afrique de l’Ouest francophone — PayDunya SoftPay (6 pays XOF)');
   console.log(`💱 Monnaie affichée: ${CURRENCY_CONFIG.name} (${CURRENCY_CONFIG.code}) · Paiement PayDunya: XOF`);
   console.log(`🌍 Langues: ${Object.keys(SUPPORTED_LANGUAGES).join(', ')}`);
   console.log(`🤖 Fournisseur: ${process.env.MUSIC_PROVIDER || 'mureka'}`);
