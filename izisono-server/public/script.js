@@ -64,9 +64,11 @@ function renderPaymentMethods(){
   const host=$('#paymentMethods');if(!host)return;
   state.paymentMethod=state.paymentMethods[0]?.code||'';
   const payButton=$('#payNowBtn');if(payButton)payButton.disabled=!state.paymentCurrencyEnabled||!state.paymentMethods.length;
-  if(!state.paymentCurrencyEnabled){host.innerHTML='<p class="empty">Le paiement PayDunya SoftPay est disponible uniquement au Togo pour le moment.</p>';return;}
-  host.innerHTML=state.paymentMethods.length?state.paymentMethods.map((m,i)=>`<button type="button" class="payment-method ${i===0?'selected':''}" data-method="${esc(m.code)}"><span class="method-icon">${esc(m.icon||'📱')}</span><span><b>${esc(m.name)}</b><small>${esc(m.short||m.name)}</small></span><span class="method-check">✓</span></button>`).join(''):'<p class="empty">Aucun opérateur de paiement n’est encore activé pour ce pays.</p>';
-  host.querySelectorAll('.payment-method').forEach(btn=>btn.onclick=()=>{state.paymentMethod=btn.dataset.method;host.querySelectorAll('.payment-method').forEach(x=>x.classList.toggle('selected',x===btn));});
+  host.innerHTML=state.paymentMethods.length?state.paymentMethods.map((m,i)=>`<button type="button" class="payment-method ${i===0?'selected':''}" data-method="${esc(m.code)}"><span class="method-icon">${esc(m.icon||'📱')}</span><span><b>${esc(m.name)}</b><small>${esc(m.short||m.name)}</small></span><span class="method-check">✓</span></button>`).join(''):'<p class="empty">Aucun opérateur de paiement documenté pour ce pays.</p>';
+  const extra=$('#paymentExtraCode'),extraLabel=$('#paymentExtraCodeLabel');
+  const updateExtra=method=>{if(!extra||!extraLabel)return;extra.hidden=!method?.requiresCode;extra.required=!!method?.requiresCode;extraLabel.textContent=method?.codeLabel||'Code de confirmation';if(!method?.requiresCode)extra.value='';};
+  updateExtra(state.paymentMethods[0]);
+  host.querySelectorAll('.payment-method').forEach(btn=>btn.onclick=()=>{state.paymentMethod=btn.dataset.method;host.querySelectorAll('.payment-method').forEach(x=>x.classList.toggle('selected',x===btn));updateExtra(state.paymentMethods.find(m=>m.code===state.paymentMethod));});
 }
 async function loadPaymentCountries(){
   try{
@@ -76,10 +78,13 @@ async function loadPaymentCountries(){
     const options=countries.map(c=>'<option value="'+c.code+'">'+esc(c.name)+' — '+esc(c.currency)+(c.currency_enabled?'':' (paiement non activé)')+'</option>').join('');
     let selected=countries.find(c=>c.code===state.paymentCountry)||countries.find(c=>c.code==='TG');
     if(selected){state.paymentCountry=selected.code;state.paymentCurrencyEnabled=!!selected.currency_enabled;}
+    const countryHint=$('#paymentCountryHint'),phoneInput=$('#paymentPhone');
+    const updateCountryHint=()=>{const c=countries.find(x=>x.code===state.paymentCountry);if(countryHint)countryHint.textContent=c?`Moyens de paiement PayDunya disponibles pour ${c.name}. Prix et paiements en FCFA (XOF).`:'Sélectionne ton pays.';if(phoneInput&&c)phoneInput.placeholder=`Ex. +${c.dial} …`;};
     selectors.forEach(select=>{
       select.innerHTML=options;select.value=state.paymentCountry;
-      select.onchange=async()=>{state.paymentCountry=select.value;selected=countries.find(c=>c.code===state.paymentCountry);state.paymentCurrencyEnabled=!!selected?.currency_enabled;selectors.forEach(other=>{other.value=state.paymentCountry;});await loadPlans();updatePaymentSummary();};
+      select.onchange=async()=>{state.paymentCountry=select.value;selected=countries.find(c=>c.code===state.paymentCountry);state.paymentCurrencyEnabled=!!selected?.currency_enabled;selectors.forEach(other=>{other.value=state.paymentCountry;});updateCountryHint();await loadPlans();updatePaymentSummary();};
     });
+    updateCountryHint();
     await loadPlans();
   }catch(e){console.warn('Pays de paiement indisponibles',e);await loadPlans();}
 }
@@ -95,11 +100,14 @@ function showPaymentPage(){if(!state.user)return login();if(!state.plans.find(p=
 async function buyPlan(plan){
   if(!state.user)return login();
   const phone=($('#paymentPhone')?.value||'').trim(),btn=$('#payNowBtn');
+  const selected=state.paymentMethods.find(m=>m.code===state.paymentMethod);
+  const extraCode=($('#paymentExtraCode')?.value||'').trim();
   if(!phone){toast('Entre ton numéro de téléphone.');$('#paymentPhone')?.focus();return;}
-  if(!state.paymentMethod){toast('Aucun moyen de paiement n’est activé pour ce pays.');return;}
+  if(!selected){toast('Aucun moyen de paiement n’est activé pour ce pays.');return;}
+  if(selected.requiresCode&&!extraCode){toast(selected.codeLabel+' requis.');$('#paymentExtraCode')?.focus();return;}
   if(btn){btn.disabled=true;btn.textContent='Lancement…';}
   try{
-    const d=await api('/billing/checkout',{method:'POST',body:JSON.stringify({plan,payment_method:state.paymentMethod,phone,country:state.paymentCountry})});
+    const d=await api('/billing/checkout',{method:'POST',body:JSON.stringify({plan,payment_method:state.paymentMethod,phone,country:state.paymentCountry,extra_code:extraCode})});
     addNotification('Paiement lancé',d.message||'Confirme la demande de paiement sur ton téléphone.');
     if(d.next_action?.url){location.href=d.next_action.url;return;}
     if(d.pending_confirmation){toast(d.message||'Confirme le paiement sur ton téléphone.');await pollPaymentStatus(d.payment_id);}
