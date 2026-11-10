@@ -76,7 +76,7 @@ router.get('/payments', async (req,res)=>{
 });
 
 router.patch('/payments/:id', async (req,res)=>{
-  try { const id=req.params.id; assertUuid(id); const status=String(req.body?.status||''); if(!['pending','initiated','failed','cancelled'].includes(status)) throw Object.assign(new Error('success_requires_paydunya_reconciliation'),{status:400}); const db=createAdminDb(); const updated=await db.update('payment_transactions',{status,updated_at:new Date().toISOString()},`id=eq.${encodeURIComponent(id)}`,'id,status,updated_at'); await audit(req.admin.user.id,'payment_status_updated','payment',id,{status}); res.json({payment:updated?.[0]||updated});
+  try { const id=req.params.id; assertUuid(id); const status=String(req.body?.status||''); if(!['pending','initiated','failed','cancelled'].includes(status)) throw Object.assign(new Error('success_requires_provider_reconciliation'),{status:400}); const db=createAdminDb(); const updated=await db.update('payment_transactions',{status,updated_at:new Date().toISOString()},`id=eq.${encodeURIComponent(id)}`,'id,status,updated_at'); await audit(req.admin.user.id,'payment_status_updated','payment',id,{status}); res.json({payment:updated?.[0]||updated});
   }catch(e){res.status(e.status||500).json({error:e.message||'payment_update_failed'});}
 });
 
