@@ -179,6 +179,8 @@ async function generateAiLyrics(){
 function bindPromptHelpers(){const input=$('#promptInput');bindVoiceInputs();if(input){input.addEventListener('input',updatePromptCounter);updatePromptCounter();}document.querySelectorAll('[data-example]').forEach(b=>b.onclick=()=>{if(input){input.value=b.dataset.example;input.dispatchEvent(new Event('input'));input.focus();input.setSelectionRange(input.value.length,input.value.length);}});document.querySelectorAll('.demo-create').forEach(b=>b.onclick=()=>{restoreMain();navigateToHash('create');setTimeout(()=>{const p=$('#promptInput');if(p){p.value=b.dataset.demoPrompt||'';p.dispatchEvent(new Event('input'));p.focus({preventScroll:true});}const title=b.dataset.demoTitle||'';const genre=title.toLowerCase().includes('amapiano')?'Amapiano':title.toLowerCase().includes('zouk')?'Zouk':title.toLowerCase().includes('gospel')?'Gospel':'Afrobeat';if($('#genreSelect'))$('#genreSelect').value=genre;},220);});}
 function login(){
   const modal=$('#loginModal');
+  const message=$('#loginMessage');
+  if(message)message.textContent='';
   if(!modal||!showAuthPanel(modal))return;
   $('#loginEmail').value=state.user?.email||$('#loginEmail').value;
   $('#loginPassword').value='';
@@ -251,7 +253,7 @@ function authError(error){
     same_password:'Choisissez un mot de passe différent de votre ancien mot de passe.',
     otp_expired:'Ce lien a expiré. Demandez un nouveau lien.',
     session_not_found:'Votre lien a expiré. Demandez un nouveau lien.',
-    invalid_credentials:'Adresse e-mail ou mot de passe incorrect.',
+    invalid_credentials:'Adresse e-mail ou mot de passe incorrect. Vérifie tes identifiants ou utilise « Mot de passe oublié ? ».',
     email_not_confirmed:'Confirme ton adresse e-mail avant de te connecter.',
     user_banned:'Ce compte est temporairement désactivé.'
   };
@@ -430,8 +432,9 @@ function hardenButtons(){document.querySelectorAll('button:not([type])').forEach
 let supabaseBootPromise=null;
 function init(){hardenButtons();bindCreationModes();bindSignup();loadOccasions();loadPaymentCountries();renderNotifications();bindNavigation();$('#promptForm').onsubmit=generate;$('#generateLyricsBtn').onclick=generateAiLyrics;$('#loginCancel').onclick=()=>hideAuthPanel($('#loginModal'));$('#loginForm').onsubmit=async e=>{
   e.preventDefault();
-  const form=e.currentTarget,submit=$('#loginSubmit');
+  const form=e.currentTarget,submit=$('#loginSubmit'),message=$('#loginMessage');
   if(submit.disabled)return;
+  if(message)message.textContent='';
   const email=$('#loginEmail').value.trim();
   const usePassword=$('#loginUsePassword')?.checked;
   const password=$('#loginPassword')?.value||'';
@@ -448,20 +451,27 @@ function init(){hardenButtons();bindCreationModes();bindSignup();loadOccasions()
     }
     if(result.error)throw result.error;
     if(usePassword){
-      hideAuthPanel($('#loginModal'));
+      if(!result.data?.session||!result.data?.user)throw new Error('La connexion n’a pas créé de session. Réessaie ou réinitialise ton mot de passe.');
+      state.user=result.data.user;
       renderAuth();
+      hideAuthPanel($('#loginModal'));
       await Promise.all([loadCredits(),loadTracks()]);
-      toast('Connexion réussie.');
-      const {data}=await state.supabase.auth.getSession();
-      if(data.session?.user?.app_metadata?.role==='admin')setTimeout(()=>location.href='/admin',300);
+      showPage('profile');
+      toast('Connexion réussie. Bienvenue dans ton espace personnel.');
+      if(result.data.user.app_metadata?.role==='admin')setTimeout(()=>location.href='/admin',300);
     }else{
       hideAuthPanel($('#loginModal'));
       toast('Lien de connexion envoyé par email.');
       addNotification('Connexion',`Lien de connexion envoyé à ${email}.`);
     }
-  }catch(err){toast(authError(err));}
+  }catch(err){
+    const text=authError(err);
+    if(message)message.textContent=text;
+    else toast(text);
+  }
   finally{submit.disabled=false;submit.textContent='Continuer';form.removeAttribute('aria-busy');}
 };
+
 $('#loginUsePassword').onchange=e=>{const on=e.target.checked;$('#loginPassword').required=on;$('#loginPassword').hidden=!on;$('#loginPasswordField').hidden=!on;$('#loginPassword').value=on?'':$('#loginPassword').value;$('#loginHint').textContent=on?'Entre ton email et ton mot de passe.':'Entre ton email : nous t’enverrons un lien de connexion sécurisé.';};$('#loginPassword').hidden=false;$('#newTrackBtn').onclick=()=>{$('#resultSection').hidden=true;navigateToHash('create')};$('#languageSelect').value=state.lang;$('#songLanguageSelect').value=state.lang;$('#languageSelect').onchange=e=>{state.lang=e.target.value;localStorage.setItem('izisono_lang',state.lang);$('#songLanguageSelect').value=state.lang;$('#mobileLanguageSelect').value=state.lang;loadOccasions()};$('#songLanguageSelect').onchange=e=>{state.lang=e.target.value;localStorage.setItem('izisono_lang',state.lang);$('#languageSelect').value=state.lang};$('#notesBtn').onclick=()=>showPage('notes');$('#profileBuy').onclick=()=>showPage('notes');$('#continuePlanBtn').onclick=showPaymentPage;$('#paymentBack').onclick=()=>showPage('notes');$('#payNowBtn').onclick=()=>{if(!state.selectedPlan)return toast('Choisis un forfait.');buyPlan(state.selectedPlan)};$('#profileLibrary').onclick=()=>{navigateToHash('library')};$('#profileNotifications').onclick=()=>{$('#notificationPanel').hidden=false};$('#saveProfileBtn').onclick=saveProfile;$('#profileBack').onclick=()=>restoreMain();$('#notesBack').onclick=()=>restoreMain();$('#notificationBtn').onclick=()=>{$('#notificationPanel').hidden=!$('#notificationPanel').hidden};$('#notificationClose').onclick=()=>$('#notificationPanel').hidden=true;$('#profileLogout').onclick=async()=>{await state.supabase.auth.signOut();restoreMain();toast('Déconnexion effectuée.')};bindPromptHelpers();$('#mobileMenuBtn').onclick=()=>$('#mobileMenu').hidden=!$('#mobileMenu').hidden;$('#mobileMenuClose').onclick=()=>$('#mobileMenu').hidden=true;document.querySelectorAll('[data-mobile-nav]').forEach(b=>b.onclick=()=>goMobileNav(b.dataset.mobileNav));document.querySelectorAll('[data-bottom-nav]').forEach(b=>b.onclick=()=>goMobileNav(b.dataset.bottomNav));document.addEventListener('click',e=>{const menu=$('#mobileMenu');if(menu&&!menu.hidden&&!menu.contains(e.target)&&!$('#mobileMenuBtn').contains(e.target))menu.hidden=true;});$('#mobileLanguageSelect').value=state.lang;$('#mobileLanguageSelect').onchange=e=>{state.lang=e.target.value;localStorage.setItem('izisono_lang',state.lang);$('#languageSelect').value=state.lang;$('#songLanguageSelect').value=state.lang;loadOccasions();$('#mobileMenu').hidden=true;};}
 if('serviceWorker' in navigator){
   window.addEventListener('load',()=>navigator.serviceWorker.register('/service-worker.js').catch(()=>{}));
