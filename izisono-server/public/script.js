@@ -177,22 +177,32 @@ async function generateAiLyrics(){
   finally{btn.disabled=false;btn.textContent='? G�n�rer des paroles avec l�IA';}
 }
 function bindPromptHelpers(){const input=$('#promptInput');bindVoiceInputs();if(input){input.addEventListener('input',updatePromptCounter);updatePromptCounter();}document.querySelectorAll('[data-example]').forEach(b=>b.onclick=()=>{if(input){input.value=b.dataset.example;input.dispatchEvent(new Event('input'));input.focus();input.setSelectionRange(input.value.length,input.value.length);}});document.querySelectorAll('.demo-create').forEach(b=>b.onclick=()=>{restoreMain();navigateToHash('create');setTimeout(()=>{const p=$('#promptInput');if(p){p.value=b.dataset.demoPrompt||'';p.dispatchEvent(new Event('input'));p.focus({preventScroll:true});}const title=b.dataset.demoTitle||'';const genre=title.toLowerCase().includes('amapiano')?'Amapiano':title.toLowerCase().includes('zouk')?'Zouk':title.toLowerCase().includes('gospel')?'Gospel':'Afrobeat';if($('#genreSelect'))$('#genreSelect').value=genre;},220);});}
-async function login(){
-  // Account creation is now the entry view, exactly like the requested card.
-  const modal=$('#signupModal');
-  if(modal.dataset.busy==='true')return;
-  if(!showAuthPanel(modal))return;resetAuthFields(modal);$('#signupMessage').textContent='';
-  $('#signupEntry').hidden=false;$('#signupSuccess').hidden=true;modal.setAttribute('aria-labelledby','signupTitle');$('#authModal').setAttribute('aria-labelledby','signupTitle');
-  $('#signupLoginPrompt').hidden=false;$('#signupLogin').hidden=false;$('#signupLogin').textContent='Se connecter';const submit=$('#signupSubmit');submit.disabled=false;submit.textContent='Créer mon compte';
-  $('#signupEmail').focus();
-}
-function showLoginPanel(){
-  const modal=$('#loginModal');if(!modal||!showAuthPanel(modal))return;
+function login(){
+  const modal=$('#loginModal');
+  if(!modal||!showAuthPanel(modal))return;
   $('#loginEmail').value=state.user?.email||$('#loginEmail').value;
-  $('#loginPassword').type='password';const reveal=document.querySelector('[data-reveal="loginPassword"]');if(reveal){reveal.textContent='Afficher';reveal.setAttribute('aria-pressed','false');}
-  $('#loginUsePassword').checked=true;$('#loginUsePassword').dispatchEvent(new Event('change'));
+  $('#loginPassword').value='';
+  $('#loginPassword').type='password';
+  const reveal=document.querySelector('[data-reveal="loginPassword"]');
+  if(reveal){reveal.textContent='Afficher';reveal.setAttribute('aria-pressed','false');}
+  $('#loginUsePassword').checked=true;
+  $('#loginUsePassword').dispatchEvent(new Event('change'));
+  const submit=$('#loginSubmit');
+  submit.disabled=false;
+  submit.textContent='Continuer';
   $('#loginEmail').focus();
 }
+function signup(){
+  const modal=$('#signupModal');
+  if(modal.dataset.busy==='true')return;
+  if(!showAuthPanel(modal))return;
+  resetAuthFields(modal);$('#signupMessage').textContent='';
+  $('#signupEntry').hidden=false;$('#signupSuccess').hidden=true;modal.setAttribute('aria-labelledby','signupTitle');$('#authModal').setAttribute('aria-labelledby','signupTitle');
+  $('#signupLoginPrompt').hidden=false;$('#signupLogin').hidden=false;$('#signupLogin').textContent='Se connecter';
+  const submit=$('#signupSubmit');submit.disabled=false;submit.textContent='Créer mon compte';
+  $('#signupEmail').focus();
+}
+function showLoginPanel(){login();}
 function handlePaymentReturn(){const p=new URLSearchParams(location.search);if(!p.has('payment'))return;const token=p.get('token');const cancelled=p.get('payment')==='cancelled';if(cancelled){toast('Paiement annulé. Aucun crédit n’a été ajouté.');history.replaceState({},'',location.pathname+location.hash);return;}if(token&&state.user){api('/billing/verify/'+encodeURIComponent(token)).then(r=>{if(r.credited){addNotification('Notes ajoutées',`${r.creditsAdded} Notes ont été ajoutées à ton compte.`);toast(`Paiement confirmé : +${r.creditsAdded} Notes`);loadCredits();}else if(['pending','initiated'].includes(String(r.status||'').toLowerCase())){toast('Paiement en cours de confirmation…');}else toast('Le paiement n’a pas encore été confirmé.');}).catch(e=>toast(e.message));}history.replaceState({},'',location.pathname+location.hash);}
 function setMobileNavActive(target){document.querySelectorAll('[data-bottom-nav]').forEach(b=>b.classList.toggle('active',b.dataset.bottomNav===target));}
 function goMobileNav(target){$('#mobileMenu').hidden=true;setMobileNavActive(target);navigateToHash(target);}
@@ -240,9 +250,15 @@ function authError(error){
     email_provider_disabled:'La connexion par e-mail est temporairement indisponible.',
     same_password:'Choisissez un mot de passe différent de votre ancien mot de passe.',
     otp_expired:'Ce lien a expiré. Demandez un nouveau lien.',
-    session_not_found:'Votre lien a expiré. Demandez un nouveau lien.'
+    session_not_found:'Votre lien a expiré. Demandez un nouveau lien.',
+    invalid_credentials:'Adresse e-mail ou mot de passe incorrect.',
+    email_not_confirmed:'Confirme ton adresse e-mail avant de te connecter.',
+    user_banned:'Ce compte est temporairement désactivé.'
   };
-  return messages[error?.code]||(error?.status===429?messages.over_request_rate_limit:'Impossible de terminer cette demande. Vérifiez votre connexion et réessayez.');
+  if(messages[error?.code])return messages[error.code];
+  if(error?.status===429)return messages.over_request_rate_limit;
+  if(error?.message&&/fetch|network|connexion|chargement/i.test(error.message))return error.message;
+  return 'Impossible de terminer cette demande. Vérifiez votre connexion et réessayez.';
 }
 function authFieldError(id,text){
   const field=$('#'+id);field.setAttribute('aria-invalid',String(!!text));
@@ -329,7 +345,7 @@ function bindSignup(){
   const resend=$('#signupResend');
   function updateResend(){const seconds=Math.max(0,Math.ceil((resendAt-Date.now())/1000));resend.disabled=seconds>0||modal.dataset.busy==='true';resend.textContent=seconds?`Renvoyer dans ${seconds} s`:'Renvoyer l’e-mail';}
   setInterval(()=>{if(!modal.hidden)updateResend();},1000);
-  document.querySelectorAll('[data-signup]').forEach(opener=>opener.onclick=login);
+  document.querySelectorAll('[data-signup]').forEach(opener=>opener.onclick=signup);
   $('#signupCancel').onclick=()=>hideAuthPanel(modal);
   $('#signupLogin').onclick=()=>{
     const email=$('#signupEmail').value.trim()||registeredEmail;
@@ -411,7 +427,42 @@ function bindRecovery(){
   };
 }
 function hardenButtons(){document.querySelectorAll('button:not([type])').forEach(b=>b.type='button');}
-function init(){hardenButtons();bindCreationModes();bindSignup();loadOccasions();loadPaymentCountries();renderNotifications();bindNavigation();$('#promptForm').onsubmit=generate;$('#generateLyricsBtn').onclick=generateAiLyrics;$('#loginCancel').onclick=()=>hideAuthPanel($('#loginModal'));$('#loginForm').onsubmit=async e=>{e.preventDefault();const email=$('#loginEmail').value.trim();if(!state.supabase){toast('Le service de connexion est encore en cours de chargement. Actualise la page puis réessaie.');return;}const usePassword=$('#loginUsePassword')?.checked;const password=$('#loginPassword')?.value||'';try{let result;if(usePassword){if(!password)throw new Error('Entre ton mot de passe.');result=await state.supabase.auth.signInWithPassword({email,password});}else{result=await state.supabase.auth.signInWithOtp({email,options:{emailRedirectTo:location.origin}});}if(result.error)throw result.error;if(usePassword){hideAuthPanel($('#loginModal'));renderAuth();await loadCredits();await loadTracks();toast('Connexion réussie.');const {data}=await state.supabase.auth.getSession();if(data.session?.user?.app_metadata?.role==='admin')setTimeout(()=>location.href='/admin',300);}else{hideAuthPanel($('#loginModal'));toast('Lien de connexion envoyé par email.');addNotification('Connexion',`Lien de connexion envoyé à ${email}.`);}}catch(err){toast(err.message||'Connexion impossible.');}};$('#loginUsePassword').onchange=e=>{const on=e.target.checked;$('#loginPassword').required=on;$('#loginPassword').hidden=!on;$('#loginPasswordField').hidden=!on;$('#loginPassword').value=on?'':$('#loginPassword').value;$('#loginHint').textContent=on?'Entre ton email et ton mot de passe.':'Entre ton email : nous t’enverrons un lien de connexion sécurisé.';};$('#loginPassword').hidden=false;$('#newTrackBtn').onclick=()=>{$('#resultSection').hidden=true;navigateToHash('create')};$('#languageSelect').value=state.lang;$('#songLanguageSelect').value=state.lang;$('#languageSelect').onchange=e=>{state.lang=e.target.value;localStorage.setItem('izisono_lang',state.lang);$('#songLanguageSelect').value=state.lang;$('#mobileLanguageSelect').value=state.lang;loadOccasions()};$('#songLanguageSelect').onchange=e=>{state.lang=e.target.value;localStorage.setItem('izisono_lang',state.lang);$('#languageSelect').value=state.lang};$('#notesBtn').onclick=()=>showPage('notes');$('#profileBuy').onclick=()=>showPage('notes');$('#continuePlanBtn').onclick=showPaymentPage;$('#paymentBack').onclick=()=>showPage('notes');$('#payNowBtn').onclick=()=>{if(!state.selectedPlan)return toast('Choisis un forfait.');buyPlan(state.selectedPlan)};$('#profileLibrary').onclick=()=>{navigateToHash('library')};$('#profileNotifications').onclick=()=>{$('#notificationPanel').hidden=false};$('#saveProfileBtn').onclick=saveProfile;$('#profileBack').onclick=()=>restoreMain();$('#notesBack').onclick=()=>restoreMain();$('#notificationBtn').onclick=()=>{$('#notificationPanel').hidden=!$('#notificationPanel').hidden};$('#notificationClose').onclick=()=>$('#notificationPanel').hidden=true;$('#profileLogout').onclick=async()=>{await state.supabase.auth.signOut();restoreMain();toast('Déconnexion effectuée.')};bindPromptHelpers();$('#mobileMenuBtn').onclick=()=>$('#mobileMenu').hidden=!$('#mobileMenu').hidden;$('#mobileMenuClose').onclick=()=>$('#mobileMenu').hidden=true;document.querySelectorAll('[data-mobile-nav]').forEach(b=>b.onclick=()=>goMobileNav(b.dataset.mobileNav));document.querySelectorAll('[data-bottom-nav]').forEach(b=>b.onclick=()=>goMobileNav(b.dataset.bottomNav));document.addEventListener('click',e=>{const menu=$('#mobileMenu');if(menu&&!menu.hidden&&!menu.contains(e.target)&&!$('#mobileMenuBtn').contains(e.target))menu.hidden=true;});$('#mobileLanguageSelect').value=state.lang;$('#mobileLanguageSelect').onchange=e=>{state.lang=e.target.value;localStorage.setItem('izisono_lang',state.lang);$('#languageSelect').value=state.lang;$('#songLanguageSelect').value=state.lang;loadOccasions();$('#mobileMenu').hidden=true;};}
+let supabaseBootPromise=null;
+function init(){hardenButtons();bindCreationModes();bindSignup();loadOccasions();loadPaymentCountries();renderNotifications();bindNavigation();$('#promptForm').onsubmit=generate;$('#generateLyricsBtn').onclick=generateAiLyrics;$('#loginCancel').onclick=()=>hideAuthPanel($('#loginModal'));$('#loginForm').onsubmit=async e=>{
+  e.preventDefault();
+  const form=e.currentTarget,submit=$('#loginSubmit');
+  if(submit.disabled)return;
+  const email=$('#loginEmail').value.trim();
+  const usePassword=$('#loginUsePassword')?.checked;
+  const password=$('#loginPassword')?.value||'';
+  submit.disabled=true;submit.textContent='Connexion…';form.setAttribute('aria-busy','true');
+  try{
+    if(!state.supabase&&supabaseBootPromise)await supabaseBootPromise;
+    if(!state.supabase)throw new Error('Le service de connexion est indisponible. Actualise la page puis réessaie.');
+    let result;
+    if(usePassword){
+      if(!password)throw new Error('Entre ton mot de passe.');
+      result=await state.supabase.auth.signInWithPassword({email,password});
+    }else{
+      result=await state.supabase.auth.signInWithOtp({email,options:{emailRedirectTo:location.origin}});
+    }
+    if(result.error)throw result.error;
+    if(usePassword){
+      hideAuthPanel($('#loginModal'));
+      renderAuth();
+      await Promise.all([loadCredits(),loadTracks()]);
+      toast('Connexion réussie.');
+      const {data}=await state.supabase.auth.getSession();
+      if(data.session?.user?.app_metadata?.role==='admin')setTimeout(()=>location.href='/admin',300);
+    }else{
+      hideAuthPanel($('#loginModal'));
+      toast('Lien de connexion envoyé par email.');
+      addNotification('Connexion',`Lien de connexion envoyé à ${email}.`);
+    }
+  }catch(err){toast(authError(err));}
+  finally{submit.disabled=false;submit.textContent='Continuer';form.removeAttribute('aria-busy');}
+};
+$('#loginUsePassword').onchange=e=>{const on=e.target.checked;$('#loginPassword').required=on;$('#loginPassword').hidden=!on;$('#loginPasswordField').hidden=!on;$('#loginPassword').value=on?'':$('#loginPassword').value;$('#loginHint').textContent=on?'Entre ton email et ton mot de passe.':'Entre ton email : nous t’enverrons un lien de connexion sécurisé.';};$('#loginPassword').hidden=false;$('#newTrackBtn').onclick=()=>{$('#resultSection').hidden=true;navigateToHash('create')};$('#languageSelect').value=state.lang;$('#songLanguageSelect').value=state.lang;$('#languageSelect').onchange=e=>{state.lang=e.target.value;localStorage.setItem('izisono_lang',state.lang);$('#songLanguageSelect').value=state.lang;$('#mobileLanguageSelect').value=state.lang;loadOccasions()};$('#songLanguageSelect').onchange=e=>{state.lang=e.target.value;localStorage.setItem('izisono_lang',state.lang);$('#languageSelect').value=state.lang};$('#notesBtn').onclick=()=>showPage('notes');$('#profileBuy').onclick=()=>showPage('notes');$('#continuePlanBtn').onclick=showPaymentPage;$('#paymentBack').onclick=()=>showPage('notes');$('#payNowBtn').onclick=()=>{if(!state.selectedPlan)return toast('Choisis un forfait.');buyPlan(state.selectedPlan)};$('#profileLibrary').onclick=()=>{navigateToHash('library')};$('#profileNotifications').onclick=()=>{$('#notificationPanel').hidden=false};$('#saveProfileBtn').onclick=saveProfile;$('#profileBack').onclick=()=>restoreMain();$('#notesBack').onclick=()=>restoreMain();$('#notificationBtn').onclick=()=>{$('#notificationPanel').hidden=!$('#notificationPanel').hidden};$('#notificationClose').onclick=()=>$('#notificationPanel').hidden=true;$('#profileLogout').onclick=async()=>{await state.supabase.auth.signOut();restoreMain();toast('Déconnexion effectuée.')};bindPromptHelpers();$('#mobileMenuBtn').onclick=()=>$('#mobileMenu').hidden=!$('#mobileMenu').hidden;$('#mobileMenuClose').onclick=()=>$('#mobileMenu').hidden=true;document.querySelectorAll('[data-mobile-nav]').forEach(b=>b.onclick=()=>goMobileNav(b.dataset.mobileNav));document.querySelectorAll('[data-bottom-nav]').forEach(b=>b.onclick=()=>goMobileNav(b.dataset.bottomNav));document.addEventListener('click',e=>{const menu=$('#mobileMenu');if(menu&&!menu.hidden&&!menu.contains(e.target)&&!$('#mobileMenuBtn').contains(e.target))menu.hidden=true;});$('#mobileLanguageSelect').value=state.lang;$('#mobileLanguageSelect').onchange=e=>{state.lang=e.target.value;localStorage.setItem('izisono_lang',state.lang);$('#languageSelect').value=state.lang;$('#songLanguageSelect').value=state.lang;loadOccasions();$('#mobileMenu').hidden=true;};}
 if('serviceWorker' in navigator){
   window.addEventListener('load',()=>navigator.serviceWorker.register('/service-worker.js').catch(()=>{}));
 }
@@ -419,7 +470,8 @@ document.addEventListener('DOMContentLoaded',async()=>{
   // Bind the UI immediately. A temporary Supabase/CDN failure must never make the buttons appear dead.
   try{init();renderAuth();if(location.pathname==='/auth')login();}catch(e){console.error('UI init failed',e);toast(`Erreur de chargement de l’interface : ${e?.message||e}`);return}
   try{
-    await bootSupabase();
+    supabaseBootPromise=bootSupabase();
+    await supabaseBootPromise;
     renderAuth();
     loadTracks();
     loadCredits();
