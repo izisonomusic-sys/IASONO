@@ -60,6 +60,16 @@ async function loadPlans(){
     document.querySelectorAll('[data-local-plan-price]').forEach(el=>{const p=state.plans.find(x=>x.id===el.dataset.localPlanPrice);if(p)el.textContent=Number(p.display_price??p.price).toLocaleString('fr-FR',{minimumFractionDigits:0,maximumFractionDigits:2})+' '+currency;});
   }catch(e){console.error('Chargement des forfaits:',e);state.plans=[];state.paymentMethods=[];renderPaymentMethods();document.querySelectorAll('[data-local-plan-price]').forEach(el=>{el.textContent='Prix indisponible';});$('#paymentPlanPrice')&&($('#paymentPlanPrice').textContent='Indisponible');updatePlanSelection();if($('#notePlanGrid'))$('#notePlanGrid').innerHTML='<p class="empty">Les tarifs sont momentanément indisponibles. Réessaie dans un instant.</p>';}
 }
+
+function selectPlan(planId){
+  const plan=state.plans.find(p=>p.id===planId);
+  if(!plan)return toast('Ce forfait n’est plus disponible. Actualise la page puis réessaie.');
+  state.selectedPlan=plan.id;
+  try{localStorage.setItem('izisono_selected_plan',plan.id);}catch(e){console.warn('Impossible de mémoriser le forfait sélectionné:',e);}
+  updatePlanSelection();
+  updatePaymentSummary();
+}
+
 function renderPaymentMethods(){
   const host=$('#paymentMethods');if(!host)return;
   state.paymentMethod=state.paymentMethods[0]?.code||'';
