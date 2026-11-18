@@ -1,13 +1,18 @@
-const CACHE='izisono-v21-shell';
+const CACHE='izisono-v22-shell';
 const SHELL=['/','/index.html','/styles.css','/script.js','/manifest.webmanifest','/assets/izisono-logo.png'];
 self.addEventListener('install',event=>{event.waitUntil(caches.open(CACHE).then(c=>c.addAll(SHELL)).then(()=>self.skipWaiting()).catch(()=>{}))});
-self.addEventListener('activate',event=>{event.waitUntil(caches.open(CACHE).then(async cache=>{
-  // Remove only legacy private/dynamic responses, not the offline shell.
+self.addEventListener('activate',event=>{event.waitUntil((async()=>{
+  // Retire previous Izisono shell versions so installed PWAs use the latest assets.
+  const keys=await caches.keys();
+  await Promise.all(keys.filter(key=>key.startsWith('izisono-v')&&key!==CACHE).map(key=>caches.delete(key)));
+  const cache=await caches.open(CACHE);
+  // Keep only the versioned offline shell; never retain dynamic or user-specific responses.
   for(const request of await cache.keys()){
     const url=new URL(request.url);
     if(!SHELL.includes(url.pathname)||url.search)await cache.delete(request);
   }
-}).then(()=>self.clients.claim()))});
+  await self.clients.claim();
+})())});
 self.addEventListener('fetch',event=>{
   if(event.request.method!=='GET')return;
   const url=new URL(event.request.url);
